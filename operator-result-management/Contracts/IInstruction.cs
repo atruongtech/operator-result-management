@@ -19,6 +19,6 @@ namespace operator_result_management
         /// </summary>
         /// <param name="context"></param>
         /// <returns>Task that returns when the corresponding instance is available.</returns>
-        Task<IOperationInstance<TResult>> Promise(ExecutionContext context);
+        IOperationInstance<TResult> GetOperation(ExecutionContext context);
     }
 }

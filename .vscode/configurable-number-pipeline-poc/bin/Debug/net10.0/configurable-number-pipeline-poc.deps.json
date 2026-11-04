@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "configurable-number-pipeline-poc/1.0.0": {
+        "dependencies": {
+          "operator-result-management": "1.0.0"
+        },
+        "runtime": {
+          "configurable-number-pipeline-poc.dll": {}
+        }
+      },
+      "operator-result-management/1.0.0": {
+        "runtime": {
+          "operator-result-management.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "configurable-number-pipeline-poc/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "operator-result-management/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
