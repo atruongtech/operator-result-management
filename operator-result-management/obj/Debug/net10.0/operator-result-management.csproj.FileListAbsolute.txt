@@ -1,0 +1,12 @@
+C:\Repos\operator-result-management\operator-result-management\bin\Debug\net10.0\operator-result-management.deps.json
+C:\Repos\operator-result-management\operator-result-management\bin\Debug\net10.0\operator-result-management.dll
+C:\Repos\operator-result-management\operator-result-management\bin\Debug\net10.0\operator-result-management.pdb
+C:\Repos\operator-result-management\operator-result-management\obj\Debug\net10.0\operator-result-management.GeneratedMSBuildEditorConfig.editorconfig
+C:\Repos\operator-result-management\operator-result-management\obj\Debug\net10.0\operator-result-management.AssemblyInfoInputs.cache
+C:\Repos\operator-result-management\operator-result-management\obj\Debug\net10.0\operator-result-management.AssemblyInfo.cs
+C:\Repos\operator-result-management\operator-result-management\obj\Debug\net10.0\operator-result-management.csproj.CoreCompileInputs.cache
+C:\Repos\operator-result-management\operator-result-management\obj\Debug\net10.0\operator-result-management.sourcelink.json
+C:\Repos\operator-result-management\operator-result-management\obj\Debug\net10.0\operator-result-management.dll
+C:\Repos\operator-result-management\operator-result-management\obj\Debug\net10.0\refint\operator-result-management.dll
+C:\Repos\operator-result-management\operator-result-management\obj\Debug\net10.0\operator-result-management.pdb
+C:\Repos\operator-result-management\operator-result-management\obj\Debug\net10.0\ref\operator-result-management.dll

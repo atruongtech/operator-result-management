@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "operator-result-management/1.0.0": {
+        "runtime": {
+          "operator-result-management.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "operator-result-management/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
