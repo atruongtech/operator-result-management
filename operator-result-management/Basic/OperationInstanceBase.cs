@@ -3,9 +3,9 @@ namespace operator_result_management.Basic
     /// <summary>
     /// Executes once per instance and publishes a result only after successful execution.
     /// </summary>
-    public abstract class OperationInstanceBase<T> : IOperationInstance<T>
+    public abstract class OperationInstanceBase<TResult> : IOperationInstance<TResult>
     {
-        private readonly TaskCompletionSource<IOperationResult<T>> _taskCompletionSource;
+        private readonly TaskCompletionSource<IOperationResult<TResult>> _taskCompletionSource;
         private readonly Lazy<Task> _execution;
         private readonly CancellationToken _cancellationToken;
 
@@ -28,14 +28,14 @@ namespace operator_result_management.Basic
         /// Observes the result without starting execution. Faults or cancels when execution
         /// faults or cancels. An operation that is never executed leaves its promise pending.
         /// </summary>
-        public Task<IOperationResult<T>> Promise() => _taskCompletionSource.Task;
+        public Task<IOperationResult<TResult>> Promise() => _taskCompletionSource.Task;
 
         /// <summary>
         /// Produces the result. Called once on first execution, never from the constructor.
         /// Returning null is an execution failure. Observe the context's cancellation token
         /// in asynchronous waits and long-running work.
         /// </summary>
-        protected abstract Task<IOperationResult<T>> ExecuteCoreAsync(CancellationToken cancellationToken);
+        protected abstract Task<IOperationResult<TResult>> ExecuteCoreAsync(CancellationToken cancellationToken);
 
         private async Task ExecuteOnceAsync()
         {
