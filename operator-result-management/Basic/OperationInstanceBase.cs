@@ -7,9 +7,12 @@ namespace operator_result_management.Basic
     {
         private readonly TaskCompletionSource<IOperationResult<T>> _taskCompletionSource;
         private readonly Lazy<Task> _execution;
+        private readonly CancellationToken _cancellationToken;
 
-        public OperationInstanceBase()
+        protected OperationInstanceBase(IExecutionContext context)
         {
+            ArgumentNullException.ThrowIfNull(context);
+            _cancellationToken = context.CancellationToken;
             _taskCompletionSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
             _execution = new(ExecuteOnceAsync, LazyThreadSafetyMode.ExecutionAndPublication);
         }
@@ -17,6 +20,7 @@ namespace operator_result_management.Basic
         /// <summary>
         /// Starts execution once. Every caller receives the same task, including after
         /// failure or cancellation; subsequent calls do not retry execution.
+        /// Uses the owning context's token for cooperative cancellation.
         /// </summary>
         public Task Execute() => _execution.Value;
 
@@ -28,15 +32,18 @@ namespace operator_result_management.Basic
 
         /// <summary>
         /// Produces the result. Called once on first execution, never from the constructor.
-        /// Returning null is an execution failure.
+        /// Returning null is an execution failure. Observe the context's cancellation token
+        /// in asynchronous waits and long-running work.
         /// </summary>
-        protected abstract Task<IOperationResult<T>> ExecuteCoreAsync();
+        protected abstract Task<IOperationResult<T>> ExecuteCoreAsync(CancellationToken cancellationToken);
 
         private async Task ExecuteOnceAsync()
         {
             try
             {
-                var result = await ExecuteCoreAsync().ConfigureAwait(false);
+                _cancellationToken.ThrowIfCancellationRequested();
+                var result = await ExecuteCoreAsync(_cancellationToken).ConfigureAwait(false);
+                _cancellationToken.ThrowIfCancellationRequested();
                 if (result is null)
                     throw new InvalidOperationException("Operation execution returned a null result.");
 

@@ -8,6 +8,7 @@ namespace operator_result_management
         /// <see cref="Basic.OperationInstanceBase{T}"/> execute once per instance and
         /// return the same task on every call, without retrying failures or cancellation.
         /// Execution errors are reported through both this task and the result promise.
+        /// Cancellation uses the owning context's token and cancels both tasks cooperatively.
         /// </summary>
         Task Execute();
     }
@@ -22,7 +23,8 @@ namespace operator_result_management
         /// Observes the eventual result without starting execution.
         /// Implementations based on <see cref="Basic.OperationInstanceBase{T}"/> publish
         /// results only after successful execution and propagate execution failures or
-        /// cancellation to this task. Call Execute to start producing the result.
+        /// cancellation to this task. Execute the owning context to start the registered graph,
+        /// or call Execute to start only this operation.
         /// </summary>
         /// <returns>Task that returns when the operation's result is completed.</returns>
         Task<IOperationResult<TResult>> Promise();

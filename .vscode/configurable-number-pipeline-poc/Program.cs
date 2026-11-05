@@ -1,6 +1,4 @@
-using System.Collections.Immutable;
 using configurable_number_pipeline_poc;
-using operator_result_management;
 
 int input;
 
@@ -25,15 +23,32 @@ var inputInstruction = new DirectInputInstruction(input);
 var multiply = new UserInputMultiplyInstruction(inputInstruction);
 var factor = new FactorInstruction(multiply);
 
-List<IInstruction<NumberPipelineExecutionContext>> process = [inputInstruction, multiply, factor];
-var context = new NumberPipelineExecutionContext(new());
-var operations = process.Select(i => i.GetOperation(context)).ToList();
+using var cancellation = new CancellationTokenSource();
+ConsoleCancelEventHandler cancelHandler = (_, args) =>
+{
+    args.Cancel = true;
+    cancellation.Cancel();
+};
+Console.CancelKeyPress += cancelHandler;
+try
+{
+    var context = new NumberPipelineExecutionContext(new(), cancellation.Token);
+    var factorOperation = factor.GetTypedOperation(context);
+    await context.ExecuteAsync();
 
-await Task.WhenAll(operations.Select(o => o.Execute()));
+    var factors = (await factorOperation.Promise()).GetResult();
+    Console.WriteLine(factors.Count == 0
+        ? $"{input} has no prime factors."
+        : $"Prime factors: {string.Join(", ", factors)}");
 
-var factors = (await factor.GetTypedOperation(context).Promise()).GetResult();
-Console.WriteLine(factors.Count == 0
-    ? $"{input} has no prime factors."
-    : $"Prime factors: {string.Join(", ", factors)}");
-
-return 0;
+    return 0;
+}
+catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+{
+    Console.Error.WriteLine("Execution canceled.");
+    return 1;
+}
+finally
+{
+    Console.CancelKeyPress -= cancelHandler;
+}

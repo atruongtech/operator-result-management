@@ -15,11 +15,11 @@ namespace operator_result_management
      where TContext : IExecutionContext 
     {
         /// <summary>
-        /// Return a handle to the instance corresponding to this step in a process
-        /// for the given execution context.
+        /// Returns or registers this step's operation and its dependencies in the given context.
+        /// Registration must complete before executing the context.
         /// </summary>
         /// <param name="context"></param>
-        /// <returns>Task that returns when the corresponding instance is available.</returns>
+        /// <returns>The shared operation instance for this instruction and context.</returns>
 
         IOperationInstance GetOperation(TContext context);
     }

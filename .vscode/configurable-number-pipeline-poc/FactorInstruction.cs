@@ -19,12 +19,8 @@ public class FactorInstruction : IInstruction<ImmutableList<int>, NumberPipeline
 
     public IOperationInstance<ImmutableList<int>> GetTypedOperation(NumberPipelineExecutionContext context)
     {
-        if (context.Operations.TryGetValue(this, out var existing) && existing is IExecutionContextContainer<FactorOperation> factor)
-            return factor.Value;
-        
-        var newop = new FactorOperation(_input.GetTypedOperation(context));
-        context.AddOperation(this, new ExecutionContextContainer<FactorOperation>(newop));
-        return newop;
+        return context.GetOrAddOperation(this,
+            () => new FactorOperation(context, _input.GetTypedOperation(context)));
     }
 
     public IOperationInstance GetOperation(NumberPipelineExecutionContext context) => GetTypedOperation(context);
@@ -34,20 +30,22 @@ public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
 {
     private readonly IOperationInstance<int> _input;
 
-    public FactorOperation(IOperationInstance<int> input)
+    public FactorOperation(IExecutionContext context, IOperationInstance<int> input) : base(context)
     {
         _input = input;
     }
 
-    protected override async Task<IOperationResult<ImmutableList<int>>> ExecuteCoreAsync()
+    protected override async Task<IOperationResult<ImmutableList<int>>> ExecuteCoreAsync(
+        CancellationToken cancellationToken)
     {
-        var result = await _input.Promise();
+        var result = await _input.Promise().WaitAsync(cancellationToken);
         var input = result.GetResult();
-        return GetPrimeFactors(input);
+        return GetPrimeFactors(input, cancellationToken);
     }
 
-    private IOperationResult<ImmutableList<int>> GetPrimeFactors(int number)
+    private IOperationResult<ImmutableList<int>> GetPrimeFactors(int number, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (number < 1)
             throw new ArgumentOutOfRangeException(
                 nameof(number), "Number must be positive.");
@@ -56,6 +54,7 @@ public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
 
         while (number % 2 == 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             factors.Add(2);
             number /= 2;
         }
@@ -63,8 +62,10 @@ public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
         // Division avoids overflow from divisor * divisor.
         for (int divisor = 3; divisor <= number / divisor; divisor += 2)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             while (number % divisor == 0)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 factors.Add(divisor);
                 number /= divisor;
             }

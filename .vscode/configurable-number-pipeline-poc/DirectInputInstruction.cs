@@ -18,13 +18,7 @@ public sealed class DirectInputInstruction : IInstruction<int, NumberPipelineExe
 
     public IOperationInstance<int> GetTypedOperation(NumberPipelineExecutionContext context)
     {
-        if (context.Operations.TryGetValue(this, out var existing) &&
-            existing is IExecutionContextContainer<DirectInputOperation> input)
-            return input.Value;
-
-        var operation = new DirectInputOperation(_input);
-        context.AddOperation(this, new ExecutionContextContainer<DirectInputOperation>(operation));
-        return operation;
+        return context.GetOrAddOperation(this, () => new DirectInputOperation(context, _input));
     }
 
     public IOperationInstance GetOperation(NumberPipelineExecutionContext context)
@@ -37,12 +31,12 @@ public sealed class DirectInputOperation : OperationInstanceBase<int>
 {
     private readonly int _input;
 
-    public DirectInputOperation(int input)
+    public DirectInputOperation(IExecutionContext context, int input) : base(context)
     {
         _input = input;
     }
 
-    protected override Task<IOperationResult<int>> ExecuteCoreAsync()
+    protected override Task<IOperationResult<int>> ExecuteCoreAsync(CancellationToken cancellationToken)
     {
         return Task.FromResult<IOperationResult<int>>(new ImmediateResult<int>(_input));
     }

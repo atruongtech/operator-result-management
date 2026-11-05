@@ -22,12 +22,8 @@ public class UserInputMultiplyInstruction : IInstruction<int, NumberPipelineExec
 
     public IOperationInstance<int> GetTypedOperation(NumberPipelineExecutionContext context)
     {
-        if (context.Operations.TryGetValue(this, out var existing) && existing is IExecutionContextContainer<UserInputMultiplyOperation> multiply)
-            return multiply.Value;
-        
-        var newop = new UserInputMultiplyOperation(context, _input.GetTypedOperation(context));
-        context.AddOperation(this, new ExecutionContextContainer<UserInputMultiplyOperation>(newop));
-        return newop;
+        return context.GetOrAddOperation(this,
+            () => new UserInputMultiplyOperation(context, _input.GetTypedOperation(context)));
     }
 }
 
@@ -37,15 +33,19 @@ public class UserInputMultiplyOperation : OperationInstanceBase<int>
     private readonly IOperationInstance<int> _input;
 
     public UserInputMultiplyOperation(NumberPipelineExecutionContext context, IOperationInstance<int> input)
+        : base(context)
     {
         _context = context;
         _input = input;
     }
 
-    protected override async Task<IOperationResult<int>> ExecuteCoreAsync()
+    protected override async Task<IOperationResult<int>> ExecuteCoreAsync(CancellationToken cancellationToken)
     {
-        var toMultiply = await _input.Promise();
+        var toMultiply = await _input.Promise().WaitAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        // Console input cannot be interrupted; check cancellation again after the read.
         var multiplyBy = _context.PromptProvider.PromptUserForIntInput("Enter an integer to multiply by:");
+        cancellationToken.ThrowIfCancellationRequested();
         var product = toMultiply.GetResult() * multiplyBy;
 
         _context.PromptProvider.InformUser($"Input was: {toMultiply.GetResult()} and result is {product}.");

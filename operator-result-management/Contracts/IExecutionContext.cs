@@ -1,27 +1,34 @@
 namespace operator_result_management
 {
     /// <summary>
-    /// Represents one instance of performing a process.
+    /// Owns the operation graph, cancellation token, and execution of one process run.
     /// </summary>
     public interface IExecutionContext
     {
-        IReadOnlyDictionary<IInstruction, IExecutionContextContainer> Operations { get; }
+        /// <summary>
+        /// Returns a read-only snapshot of registered executable operations.
+        /// </summary>
+        IReadOnlyDictionary<IInstruction, IOperationInstance> Operations { get; }
 
-        bool AddOperation(IInstruction instruction, IExecutionContextContainer contextContainer);
-    }
+        /// <summary>
+        /// Shared cooperative cancellation for this run. The caller owns and disposes
+        /// the associated CancellationTokenSource; operations capture this token at construction.
+        /// </summary>
+        CancellationToken CancellationToken { get; }
 
-    public interface IExecutionContextContainer
-    {
-        Type ValueType {get;}
-    }
+        /// <summary>
+        /// Atomically returns or creates the operation for an instruction.
+        /// Factories may register dependencies but must not execute or wait for operations.
+        /// New registrations are rejected after execution starts; existing lookups remain valid.
+        /// </summary>
+        TOperation GetOrAddOperation<TOperation>(IInstruction instruction, Func<TOperation> factory)
+            where TOperation : class, IOperationInstance;
 
-    public interface IExecutionContextContainer<TResult> : IExecutionContextContainer
-    {
-        TResult Value {get;}
-    }
-
-    public sealed record ExecutionContextContainer<TResult>(TResult Value) : IExecutionContextContainer<TResult>
-    {
-        public Type ValueType => typeof(TResult);
+        /// <summary>
+        /// Freezes the completed graph, starts all registered operations, and awaits them all.
+        /// Repeated calls return the same task, including after failure or cancellation.
+        /// Register all roots and their dependencies before calling this method.
+        /// </summary>
+        Task ExecuteAsync();
     }
 }

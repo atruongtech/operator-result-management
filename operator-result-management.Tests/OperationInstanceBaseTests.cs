@@ -195,7 +195,7 @@ public class OperationInstanceBaseTests
     [Fact]
     public async Task DirectInputRequiresExecutionBeforePublishingResult()
     {
-        var operation = new DirectInputOperation(12);
+        var operation = new DirectInputOperation(new ExecutionContext(), 12);
 
         Assert.False(operation.Promise().IsCompleted);
         var execution = operation.Execute();
@@ -208,8 +208,9 @@ public class OperationInstanceBaseTests
     [Fact]
     public async Task FactorCanStartBeforeInputExecution()
     {
-        var input = new DirectInputOperation(36);
-        var factor = new FactorOperation(input);
+        var context = new ExecutionContext();
+        var input = new DirectInputOperation(context, 36);
+        var factor = new FactorOperation(context, input);
         var execution = factor.Execute();
 
         Assert.False(execution.IsCompleted);
@@ -224,8 +225,9 @@ public class OperationInstanceBaseTests
     [Fact]
     public async Task FactorFailureFaultsPromiseToo()
     {
-        var input = new DirectInputOperation(0);
-        var factor = new FactorOperation(input);
+        var context = new ExecutionContext();
+        var input = new DirectInputOperation(context, 0);
+        var factor = new FactorOperation(context, input);
 
         await input.Execute().WaitAsync(_timeout);
         var execution = factor.Execute();
@@ -241,13 +243,13 @@ public class OperationInstanceBaseTests
         => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private sealed class TestOperation(Func<Task<IOperationResult<int>>> core)
-        : OperationInstanceBase<int>
+        : OperationInstanceBase<int>(new ExecutionContext())
     {
         private int _invocationCount;
 
         public int InvocationCount => Volatile.Read(ref _invocationCount);
 
-        protected override Task<IOperationResult<int>> ExecuteCoreAsync()
+        protected override Task<IOperationResult<int>> ExecuteCoreAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _invocationCount);
             return core();
