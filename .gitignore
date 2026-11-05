@@ -1,0 +1,21 @@
+# .NET build output (including the project under .vscode).
+[Bb]in/
+[Oo]bj/
+artifacts/
+
+# Local IDE state. Keep shared .vscode settings and source files.
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Test results and coverage.
+[Tt]est[Rr]esults/
+*.coverage
+*.coveragexml
+
+# Generated NuGet packages.
+*.nupkg
+*.snupkg
