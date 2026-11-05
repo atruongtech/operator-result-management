@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 
 namespace operator_result_management
 {
-    public class ExecutionContext : IExecutionContext
+    public class ExecutionContextBase : IExecutionContext
     {
         private readonly object _sync = new();
         private readonly Dictionary<IInstruction, IOperationInstance> _operations = [];
@@ -21,7 +21,7 @@ namespace operator_result_management
 
         public CancellationToken CancellationToken { get; }
 
-        public ExecutionContext(CancellationToken cancellationToken = default)
+        public ExecutionContextBase(CancellationToken cancellationToken = default)
         {
             CancellationToken = cancellationToken;
         }

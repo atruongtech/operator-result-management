@@ -49,7 +49,7 @@ public class ExecutionContextTests
     [Fact]
     public async Task StartsAllOperationsBeforeAwaitingDependencies()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var completion = NewCompletionSource<IOperationResult<int>>();
         var upstream = new TestOperation(context, token => completion.Task.WaitAsync(token));
         var downstream = new TestOperation(context, async token => await upstream.Promise().WaitAsync(token));
@@ -69,7 +69,7 @@ public class ExecutionContextTests
     [Fact]
     public async Task ConcurrentExecutionCallsShareAggregateTask()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var completion = NewCompletionSource<IOperationResult<int>>();
         var operation = context.GetOrAddOperation(new TestInstruction(),
             () => new TestOperation(context, token => completion.Task.WaitAsync(token)));
@@ -93,7 +93,7 @@ public class ExecutionContextTests
     [Fact]
     public async Task ExecutionFreezesRegistrationButAllowsExistingLookup()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var instruction = new TestInstruction();
         var completion = NewCompletionSource<IOperationResult<int>>();
         var operation = context.GetOrAddOperation(instruction,
@@ -113,7 +113,7 @@ public class ExecutionContextTests
     [Fact]
     public void OperationsReturnsImmutableSnapshot()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var snapshot = context.Operations;
         var instruction = new TestInstruction();
         var operation = context.GetOrAddOperation(instruction, () => new DirectInputOperation(context, 1));
@@ -128,7 +128,7 @@ public class ExecutionContextTests
     [Fact]
     public void RegistrationRejectsTypeMismatch()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var instruction = new TestInstruction();
         context.GetOrAddOperation(instruction, () => new DirectInputOperation(context, 1));
 
@@ -141,7 +141,7 @@ public class ExecutionContextTests
     [Fact]
     public void FailedFactoryDoesNotPoisonRegistration()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var instruction = new TestInstruction();
         var error = new InvalidOperationException("Factory failed.");
 
@@ -159,7 +159,7 @@ public class ExecutionContextTests
     [Fact]
     public void RecursiveRegistrationDetectsCycles()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var first = new TestInstruction();
         var second = new TestInstruction();
 
@@ -176,7 +176,7 @@ public class ExecutionContextTests
     [Fact]
     public async Task CannotExecuteInsideRegistrationFactory()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var instruction = new TestInstruction();
 
         Assert.Throws<InvalidOperationException>(() =>
@@ -193,7 +193,7 @@ public class ExecutionContextTests
     [Fact]
     public async Task SynchronousExecuteFailureStillStartsRemainingOperations()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var error = new InvalidOperationException("Execute threw synchronously.");
         var failing = context.GetOrAddOperation(new TestInstruction(), () => new ThrowingOperation(error));
         var succeeding = context.GetOrAddOperation(new TestInstruction(),
@@ -213,7 +213,7 @@ public class ExecutionContextTests
     [Fact]
     public async Task UpstreamFailureFaultsContextAndDependentPromise()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var completion = NewCompletionSource<IOperationResult<int>>();
         var upstream = context.GetOrAddOperation(new TestInstruction(),
             () => new TestOperation(context, token => completion.Task.WaitAsync(token)));
@@ -261,7 +261,7 @@ public class ExecutionContextTests
     public async Task ContextCancellationInterruptsRunningWorkAndDependencyWaits()
     {
         using var cancellation = new CancellationTokenSource();
-        var context = new ExecutionContext(cancellation.Token);
+        var context = new ExecutionContextBase(cancellation.Token);
         var completion = NewCompletionSource<IOperationResult<int>>();
         CancellationToken receivedToken = default;
         var upstream = context.GetOrAddOperation(new TestInstruction(),
@@ -291,7 +291,7 @@ public class ExecutionContextTests
     public async Task CancellationBeforePublicationDiscardsNonCooperativeResult()
     {
         using var cancellation = new CancellationTokenSource();
-        var context = new ExecutionContext(cancellation.Token);
+        var context = new ExecutionContextBase(cancellation.Token);
         var completion = NewCompletionSource<IOperationResult<int>>();
         var operation = context.GetOrAddOperation(new TestInstruction(),
             () => new TestOperation(context, _ => completion.Task));
@@ -307,7 +307,7 @@ public class ExecutionContextTests
     [Fact]
     public async Task CancelingObserverWaitDoesNotCancelRun()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         using var observerCancellation = new CancellationTokenSource();
         var completion = NewCompletionSource<IOperationResult<int>>();
         var operation = context.GetOrAddOperation(new TestInstruction(),
@@ -330,7 +330,7 @@ public class ExecutionContextTests
     public async Task EmptyContextCompletesAndFreezesRegistration(bool canceled)
     {
         using var cancellation = new CancellationTokenSource();
-        var context = new ExecutionContext(cancellation.Token);
+        var context = new ExecutionContextBase(cancellation.Token);
         if (canceled)
             cancellation.Cancel();
 
@@ -355,7 +355,7 @@ public class ExecutionContextTests
     [Fact]
     public async Task SameOperationRegisteredUnderTwoInstructionsExecutesOnce()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var operation = new CountingOperation();
         context.GetOrAddOperation(new TestInstruction(), () => operation);
         context.GetOrAddOperation(new TestInstruction(), () => operation);

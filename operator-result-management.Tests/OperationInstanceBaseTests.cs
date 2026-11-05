@@ -195,7 +195,7 @@ public class OperationInstanceBaseTests
     [Fact]
     public async Task DirectInputRequiresExecutionBeforePublishingResult()
     {
-        var operation = new DirectInputOperation(new ExecutionContext(), 12);
+        var operation = new DirectInputOperation(new ExecutionContextBase(), 12);
 
         Assert.False(operation.Promise().IsCompleted);
         var execution = operation.Execute();
@@ -208,7 +208,7 @@ public class OperationInstanceBaseTests
     [Fact]
     public async Task FactorCanStartBeforeInputExecution()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var input = new DirectInputOperation(context, 36);
         var factor = new FactorOperation(context, input);
         var execution = factor.Execute();
@@ -225,7 +225,7 @@ public class OperationInstanceBaseTests
     [Fact]
     public async Task FactorFailureFaultsPromiseToo()
     {
-        var context = new ExecutionContext();
+        var context = new ExecutionContextBase();
         var input = new DirectInputOperation(context, 0);
         var factor = new FactorOperation(context, input);
 
@@ -243,7 +243,7 @@ public class OperationInstanceBaseTests
         => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private sealed class TestOperation(Func<Task<IOperationResult<int>>> core)
-        : OperationInstanceBase<int>(new ExecutionContext())
+        : OperationInstanceBase<int>(new ExecutionContextBase())
     {
         private int _invocationCount;
 

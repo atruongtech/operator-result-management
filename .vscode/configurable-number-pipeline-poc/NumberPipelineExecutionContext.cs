@@ -3,7 +3,7 @@ using operator_result_management;
 
 namespace configurable_number_pipeline_poc;
 
-public class NumberPipelineExecutionContext : operator_result_management.ExecutionContext
+public class NumberPipelineExecutionContext : operator_result_management.ExecutionContextBase
 {
     public UserInterfaceProvider PromptProvider { get; }
 

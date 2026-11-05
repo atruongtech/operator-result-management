@@ -7,7 +7,7 @@ namespace operator_result_management
 
     /// <summary>
     /// Represents a defined step in a repeatable process.
-    /// Each individual instance of performing the process, represented by instances of <see cref="ExecutionContext"/>, can have an individual operation
+    /// Each individual instance of performing the process, represented by instances of <see cref="ExecutionContextBase"/>, can have an individual operation
     /// corresponding to the step.
     /// </summary>
     /// <typeparam name="TResult"></typeparam>
