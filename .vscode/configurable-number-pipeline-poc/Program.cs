@@ -1,4 +1,6 @@
+using System.Collections.Immutable;
 using configurable_number_pipeline_poc;
+using operator_result_management;
 
 int input;
 
@@ -21,11 +23,14 @@ while (true)
 
 var inputInstruction = new DirectInputInstruction(input);
 var procedure = new FactorInstruction(inputInstruction);
-var context = new operator_result_management.ExecutionContext();
-var operation = (FactorOperation)procedure.GetOperation(context);
 
-await operation.Execute();
-var factors = (await operation.Promise()).GetResult();
+List<IInstruction> process = [inputInstruction, procedure];
+var context = new operator_result_management.ExecutionContext();
+var operations = process.Select(i => i.GetOperation(context)).ToList();
+
+await Task.WhenAll(operations.Select(o => o.Execute()));
+
+var factors = (await procedure.GetTypedOperation(context).Promise()).GetResult();
 
 Console.WriteLine(factors.Count == 0
     ? $"{input} has no prime factors."

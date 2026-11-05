@@ -16,7 +16,7 @@ public sealed class DirectInputInstruction : IInstruction<int>
 
     public int Input => _input;
 
-    public IOperationInstance<int> GetOperation(operator_result_management.ExecutionContext context)
+    public IOperationInstance<int> GetTypedOperation(operator_result_management.ExecutionContext context)
     {
         if (context.Operations.TryGetValue(this, out var existing) &&
             existing is IExecutionContextContainer<DirectInputOperation> input)
@@ -26,6 +26,11 @@ public sealed class DirectInputInstruction : IInstruction<int>
         context.AddOperation(this, new ExecutionContextContainer<DirectInputOperation>(operation));
         return operation;
     }
+
+    public IOperationInstance GetOperation(operator_result_management.ExecutionContext context)
+    {
+        return GetTypedOperation(context);
+    }
 }
 
 public sealed class DirectInputOperation : OperationInstanceBase<int>
@@ -33,5 +38,10 @@ public sealed class DirectInputOperation : OperationInstanceBase<int>
     public DirectInputOperation(int input)
     {
         Fulfill(new ImmediateResult<int>(input));
+    }
+
+    public override Task Execute()
+    {
+        return Task.CompletedTask;
     }
 }

@@ -3,6 +3,8 @@ namespace operator_result_management
     public interface IInstruction
     {
         Guid Id { get; }
+
+        IOperationInstance GetOperation(ExecutionContext context);
     }
 
     /// <summary>
@@ -19,6 +21,6 @@ namespace operator_result_management
         /// </summary>
         /// <param name="context"></param>
         /// <returns>Task that returns when the corresponding instance is available.</returns>
-        IOperationInstance<TResult> GetOperation(ExecutionContext context);
+        IOperationInstance<TResult> GetTypedOperation(ExecutionContext context);
     }
 }

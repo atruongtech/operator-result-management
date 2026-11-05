@@ -17,15 +17,17 @@ public class FactorInstruction : IInstruction<ImmutableList<int>>
         _input = input;
     }
 
-    public IOperationInstance<ImmutableList<int>> GetOperation(operator_result_management.ExecutionContext context)
+    public IOperationInstance<ImmutableList<int>> GetTypedOperation(operator_result_management.ExecutionContext context)
     {
         if (context.Operations.TryGetValue(this, out var existing) && existing is IExecutionContextContainer<FactorOperation> factor)
             return factor.Value;
         
-        var newop = new FactorOperation(_input.GetOperation(context));
+        var newop = new FactorOperation(_input.GetTypedOperation(context));
         context.AddOperation(this, new ExecutionContextContainer<FactorOperation>(newop));
         return newop;
     }
+
+    public IOperationInstance GetOperation(operator_result_management.ExecutionContext context) => GetTypedOperation(context);
 }
 
 public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
@@ -37,7 +39,7 @@ public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
         _input = input;
     }
 
-    public async Task Execute()
+    public override async Task Execute()
     {
         var result = await _input.Promise();
         var input = result.GetResult();

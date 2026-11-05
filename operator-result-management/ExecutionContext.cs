@@ -1,6 +1,6 @@
 namespace operator_result_management
 {
-    public record ExecutionContext
+    public record ExecutionContext : IExecutionContext
     {
         private Dictionary<IInstruction, IExecutionContextContainer> _operations;
 

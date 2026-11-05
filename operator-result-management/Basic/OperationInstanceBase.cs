@@ -9,6 +9,8 @@ namespace operator_result_management.Basic
             _taskCompletionSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
+        public abstract Task Execute();
+
         public Task<IOperationResult<T>> Promise() => _taskCompletionSource.Task;
 
         protected bool Fulfill(IOperationResult<T> result)
