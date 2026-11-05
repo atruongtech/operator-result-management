@@ -1,4 +1,5 @@
 using configurable_number_pipeline_poc;
+using operator_result_management;
 
 int input;
 
@@ -33,7 +34,7 @@ Console.CancelKeyPress += cancelHandler;
 try
 {
     var context = new NumberPipelineExecutionContext(new(), cancellation.Token);
-    factor.GetTypedOperation(context);
+    context.Register(factor);
     await context.ExecuteAsync();
 
     return 0;

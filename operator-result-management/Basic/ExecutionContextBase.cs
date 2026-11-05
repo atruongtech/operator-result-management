@@ -5,8 +5,9 @@ namespace operator_result_management
     public class ExecutionContextBase : IExecutionContext
     {
         private readonly object _sync = new();
-        private readonly Dictionary<IInstruction, IOperationInstance> _operations = [];
-        private readonly HashSet<IInstruction> _creating = [];
+        private readonly Dictionary<IInstruction, IOperationInstance> _operations =
+            new(ReferenceEqualityComparer.Instance);
+        private readonly HashSet<IInstruction> _creating = new(ReferenceEqualityComparer.Instance);
         private Lazy<Task>? _execution;
 
         public IReadOnlyDictionary<IInstruction, IOperationInstance> Operations
@@ -15,7 +16,8 @@ namespace operator_result_management
             {
                 lock (_sync)
                     return new ReadOnlyDictionary<IInstruction, IOperationInstance>(
-                        new Dictionary<IInstruction, IOperationInstance>(_operations));
+                        new Dictionary<IInstruction, IOperationInstance>(
+                            _operations, ReferenceEqualityComparer.Instance));
             }
         }
 

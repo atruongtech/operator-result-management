@@ -14,7 +14,7 @@ public class ExecutionContextTests
         var context = new NumberPipelineExecutionContext(new UserInterfaceProvider());
         var input = new DirectInputInstruction(36);
         var factor = new FactorInstruction(input);
-        var operation = factor.GetTypedOperation(context);
+        var operation = context.Register(factor);
 
         Assert.Equal(2, context.Operations.Count);
         Assert.False(operation.Promise().IsCompleted);
@@ -23,7 +23,7 @@ public class ExecutionContextTests
 
         Assert.Equal(new[] { 2, 2, 3, 3 },
             (await operation.Promise().WaitAsync(_timeout)).GetResult());
-        Assert.Same(operation, factor.GetTypedOperation(context));
+        Assert.Same(operation, context.Register(factor));
         Assert.Same(execution, context.ExecuteAsync());
     }
 
@@ -36,7 +36,7 @@ public class ExecutionContextTests
         var callers = Enumerable.Range(0, 64).Select(async _ =>
         {
             await start.Task;
-            return factor.GetTypedOperation(context);
+            return context.Register(factor);
         }).ToArray();
         start.SetResult(true);
         var operations = await Task.WhenAll(callers).WaitAsync(_timeout);
@@ -44,6 +44,185 @@ public class ExecutionContextTests
         Assert.All(operations, operation => Assert.Same(operations[0], operation));
         Assert.Equal(2, context.Operations.Count);
         await context.ExecuteAsync().WaitAsync(_timeout);
+    }
+
+    [Fact]
+    public async Task RegisteringDiamondGraphSharesUpstreamWorkAcrossRoots()
+    {
+        var context = new ExecutionContextBase();
+        var input = new GraphInstruction(40);
+        var left = new GraphInstruction(1, input);
+        var right = new GraphInstruction(2, input);
+        var output = new GraphInstruction(0, left, right);
+
+        var leftOperation = context.Register(left);
+        var rightOperation = context.Register(right);
+        var outputOperation = context.Register(output);
+        var inputOperation = context.Register(input);
+        var operations = context.Operations;
+
+        Assert.Equal(4, operations.Count);
+        Assert.Same(inputOperation, operations[input]);
+        Assert.Same(leftOperation, operations[left]);
+        Assert.Same(rightOperation, operations[right]);
+        Assert.Same(outputOperation, operations[output]);
+        Assert.All(operations.Values, operation =>
+        {
+            Assert.Equal(0, Assert.IsType<TestOperation>(operation).InvocationCount);
+        });
+        Assert.False(outputOperation.Promise().IsCompleted);
+        Assert.Same(inputOperation, context.Register(input));
+
+        var execution = context.ExecuteAsync();
+        await execution.WaitAsync(_timeout);
+
+        Assert.Equal(41, (await leftOperation.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Equal(42, (await rightOperation.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Equal(83, (await outputOperation.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Same(execution, context.ExecuteAsync());
+        Assert.All(operations.Values, operation =>
+        {
+            Assert.Equal(1, Assert.IsType<TestOperation>(operation).InvocationCount);
+        });
+    }
+
+    [Fact]
+    public async Task SeparateInstancesWithSameConfigurationAndIdRemainDistinct()
+    {
+        var context = new ExecutionContextBase();
+        var id = Guid.NewGuid();
+        var first = new GraphInstruction(42) { Id = id };
+        var second = new GraphInstruction(42) { Id = id };
+
+        var firstOperation = context.Register(first);
+        var secondOperation = context.Register(second);
+
+        Assert.NotSame(firstOperation, secondOperation);
+        Assert.Equal(2, context.Operations.Count);
+        await context.ExecuteAsync().WaitAsync(_timeout);
+        Assert.Equal(42, (await firstOperation.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Equal(42, (await secondOperation.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Equal(1, Assert.IsType<TestOperation>(firstOperation).InvocationCount);
+        Assert.Equal(1, Assert.IsType<TestOperation>(secondOperation).InvocationCount);
+    }
+
+    [Fact]
+    public async Task OverriddenEqualityDoesNotMergeInstructionsOrCreateFalseCycles()
+    {
+        var context = new ExecutionContextBase();
+        var input = new EqualInstruction(40);
+        var left = new EqualInstruction(1, input);
+        var right = new EqualInstruction(2, input);
+        Assert.True(left.Equals(input));
+        Assert.True(left.Equals(right));
+
+        var leftOperation = context.Register(left);
+        var rightOperation = context.Register(right);
+        var inputOperation = context.Register(input);
+        var snapshot = context.Operations;
+
+        Assert.Equal(3, snapshot.Count);
+        Assert.Same(inputOperation, snapshot[input]);
+        Assert.Same(leftOperation, snapshot[left]);
+        Assert.Same(rightOperation, snapshot[right]);
+        Assert.False(snapshot.ContainsKey(new EqualInstruction(40)));
+        Assert.Same(leftOperation, context.Register(left));
+        await context.ExecuteAsync().WaitAsync(_timeout);
+        Assert.Equal(41, (await leftOperation.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Equal(42, (await rightOperation.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Equal(1, Assert.IsType<TestOperation>(inputOperation).InvocationCount);
+    }
+
+    [Fact]
+    public async Task NewContextCreatesIndependentOperationsForSameInstructions()
+    {
+        var firstContext = new ExecutionContextBase();
+        var secondContext = new ExecutionContextBase();
+        var input = new GraphInstruction(40);
+        var output = new GraphInstruction(2, input);
+        var firstOperation = firstContext.Register(output);
+        var secondOperation = secondContext.Register(output);
+
+        Assert.NotSame(firstOperation, secondOperation);
+        Assert.NotSame(firstContext.Operations[input], secondContext.Operations[input]);
+        await firstContext.ExecuteAsync().WaitAsync(_timeout);
+        Assert.False(secondOperation.Promise().IsCompleted);
+        Assert.All(secondContext.Operations.Values, operation =>
+        {
+            Assert.Equal(0, Assert.IsType<TestOperation>(operation).InvocationCount);
+        });
+        await secondContext.ExecuteAsync().WaitAsync(_timeout);
+
+        Assert.Equal(42, (await firstOperation.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Equal(42, (await secondOperation.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.All(firstContext.Operations.Values.Concat(secondContext.Operations.Values), operation =>
+        {
+            Assert.Equal(1, Assert.IsType<TestOperation>(operation).InvocationCount);
+        });
+    }
+
+    [Fact]
+    public async Task UntypedRegistrationSharesTypedOperation()
+    {
+        var context = new ExecutionContextBase();
+        var instruction = new GraphInstruction(42);
+        IInstruction<ExecutionContextBase> untypedInstruction = instruction;
+
+        var operation = context.Register(untypedInstruction);
+
+        Assert.Same(operation, context.Register(instruction));
+        Assert.Single(context.Operations);
+        Assert.Equal(0, Assert.IsType<TestOperation>(operation).InvocationCount);
+        await context.ExecuteAsync().WaitAsync(_timeout);
+        Assert.Equal(1, Assert.IsType<TestOperation>(operation).InvocationCount);
+    }
+
+    [Fact]
+    public async Task RegisterRejectsNewInstructionsAfterExecutionButAllowsExistingOnes()
+    {
+        var context = new ExecutionContextBase();
+        var instruction = new GraphInstruction(42);
+        var operation = context.Register(instruction);
+        IInstruction<ExecutionContextBase> untypedInstruction = instruction;
+        await context.ExecuteAsync().WaitAsync(_timeout);
+
+        Assert.Same(operation, context.Register(instruction));
+        Assert.Same(operation, context.Register(untypedInstruction));
+        Assert.Throws<InvalidOperationException>(() => context.Register(new GraphInstruction(42)));
+        IInstruction<ExecutionContextBase> newUntypedInstruction = new GraphInstruction(42);
+        Assert.Throws<InvalidOperationException>(() => context.Register(newUntypedInstruction));
+        Assert.Single(context.Operations);
+    }
+
+    [Fact]
+    public void RegisterRejectsNullContextAndInstruction()
+    {
+        var context = new ExecutionContextBase();
+        var instruction = new GraphInstruction(42);
+        IInstruction<ExecutionContextBase> untypedInstruction = instruction;
+        ExecutionContextBase nullContext = null!;
+        IInstruction<int, ExecutionContextBase> nullInstruction = null!;
+        IInstruction<ExecutionContextBase> nullUntypedInstruction = null!;
+
+        Assert.Throws<ArgumentNullException>("context", () => nullContext.Register(instruction));
+        Assert.Throws<ArgumentNullException>("context", () => nullContext.Register(untypedInstruction));
+        Assert.Throws<ArgumentNullException>("instruction", () => context.Register(nullInstruction));
+        Assert.Throws<ArgumentNullException>("instruction", () => context.Register(nullUntypedInstruction));
+        Assert.Empty(context.Operations);
+    }
+
+    [Fact]
+    public void PipelineInstructionIdsAreStableAndDistinct()
+    {
+        var input = new DirectInputInstruction(42);
+        var first = new UserInputMultiplyInstruction(input);
+        var second = new UserInputMultiplyInstruction(input);
+        var factor = new FactorInstruction(first);
+        var ids = new[] { input.Id, first.Id, second.Id, factor.Id };
+
+        Assert.All(ids, id => Assert.NotEqual(Guid.Empty, id));
+        Assert.Equal(ids, new[] { input.Id, first.Id, second.Id, factor.Id });
+        Assert.Equal(4, ids.Distinct().Count());
     }
 
     [Fact]
@@ -239,9 +418,9 @@ public class ExecutionContextTests
         var inputInstruction = new DirectInputInstruction(36);
         var multiplyInstruction = new UserInputMultiplyInstruction(inputInstruction);
         var factorInstruction = new FactorInstruction(multiplyInstruction);
-        var factor = factorInstruction.GetTypedOperation(context);
-        var input = inputInstruction.GetTypedOperation(context);
-        var multiply = multiplyInstruction.GetTypedOperation(context);
+        var factor = context.Register(factorInstruction);
+        var input = context.Register(inputInstruction);
+        var multiply = context.Register(multiplyInstruction);
         cancellation.Cancel();
 
         var execution = context.ExecuteAsync();
@@ -381,6 +560,35 @@ public class ExecutionContextTests
     private sealed class TestInstruction : IInstruction
     {
         public Guid Id { get; } = Guid.NewGuid();
+    }
+
+    private class GraphInstruction(int value, params GraphInstruction[] dependencies)
+        : IInstruction<int, ExecutionContextBase>
+    {
+        public Guid Id { get; init; } = Guid.NewGuid();
+
+        public IOperationInstance<int> GetTypedOperation(ExecutionContextBase context)
+        {
+            return context.GetOrAddOperation(this, () =>
+            {
+                var operations = dependencies.Select(dependency => dependency.GetTypedOperation(context)).ToArray();
+                return new TestOperation(context, async token =>
+                {
+                    var results = await Task.WhenAll(operations.Select(operation => operation.Promise().WaitAsync(token)));
+                    return new ImmediateResult<int>(value + results.Sum(result => result.GetResult()));
+                });
+            });
+        }
+
+        public IOperationInstance GetOperation(ExecutionContextBase context) => GetTypedOperation(context);
+    }
+
+    private sealed class EqualInstruction(int value, params GraphInstruction[] dependencies)
+        : GraphInstruction(value, dependencies)
+    {
+        public override bool Equals(object? obj) => obj is EqualInstruction;
+
+        public override int GetHashCode() => 0;
     }
 
     private sealed class TestOperation(

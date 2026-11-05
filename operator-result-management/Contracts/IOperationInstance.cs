@@ -25,6 +25,8 @@ namespace operator_result_management
         /// results only after successful execution and propagate execution failures or
         /// cancellation to this task. Execute the owning context to start the registered graph,
         /// or call Execute to start only this operation.
+        /// All consumers share the published result; immutable result values are recommended.
+        /// Consumers of mutable values must coordinate access.
         /// </summary>
         /// <returns>Task that returns when the operation's result is completed.</returns>
         Task<IOperationResult<TResult>> Promise();

@@ -8,7 +8,7 @@ public class UserInputMultiplyInstruction : IInstruction<int, NumberPipelineExec
 {
     private readonly IInstruction<int, NumberPipelineExecutionContext> _input;
 
-    public Guid Id => new();
+    public Guid Id { get; } = Guid.NewGuid();
 
     public UserInputMultiplyInstruction(IInstruction<int, NumberPipelineExecutionContext> input)
     {
