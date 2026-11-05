@@ -6,6 +6,8 @@ namespace operator_result_management
     public interface IExecutionContext
     {
         IReadOnlyDictionary<IInstruction, IExecutionContextContainer> Operations { get; }
+
+        bool AddOperation(IInstruction instruction, IExecutionContextContainer contextContainer);
     }
 
     public interface IExecutionContextContainer

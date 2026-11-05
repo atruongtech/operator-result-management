@@ -17,7 +17,7 @@ public class FactorInstruction : IInstruction<ImmutableList<int>>
         _input = input;
     }
 
-    public IOperationInstance<ImmutableList<int>> GetTypedOperation(operator_result_management.ExecutionContext context)
+    public IOperationInstance<ImmutableList<int>> GetTypedOperation(IExecutionContext context)
     {
         if (context.Operations.TryGetValue(this, out var existing) && existing is IExecutionContextContainer<FactorOperation> factor)
             return factor.Value;
@@ -27,7 +27,7 @@ public class FactorInstruction : IInstruction<ImmutableList<int>>
         return newop;
     }
 
-    public IOperationInstance GetOperation(operator_result_management.ExecutionContext context) => GetTypedOperation(context);
+    public IOperationInstance GetOperation(IExecutionContext context) => GetTypedOperation(context);
 }
 
 public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
