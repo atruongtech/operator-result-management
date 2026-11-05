@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("configurable-number-pipeline-poc")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+37105f35ee9a82667b08c86cf8dcc6ede755d23c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ab9b239f5136635b782a1fa0e6fb126de7eef308")]
 [assembly: System.Reflection.AssemblyProductAttribute("configurable-number-pipeline-poc")]
 [assembly: System.Reflection.AssemblyTitleAttribute("configurable-number-pipeline-poc")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

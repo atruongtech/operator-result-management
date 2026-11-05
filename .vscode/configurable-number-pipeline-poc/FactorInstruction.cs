@@ -39,12 +39,11 @@ public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
         _input = input;
     }
 
-    public override async Task Execute()
+    protected override async Task<IOperationResult<ImmutableList<int>>> ExecuteCoreAsync()
     {
         var result = await _input.Promise();
         var input = result.GetResult();
-        var factors = GetPrimeFactors(input);
-        Fulfill(factors);
+        return GetPrimeFactors(input);
     }
 
     private IOperationResult<ImmutableList<int>> GetPrimeFactors(int number)

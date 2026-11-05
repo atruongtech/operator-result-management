@@ -35,13 +35,15 @@ public sealed class DirectInputInstruction : IInstruction<int, NumberPipelineExe
 
 public sealed class DirectInputOperation : OperationInstanceBase<int>
 {
+    private readonly int _input;
+
     public DirectInputOperation(int input)
     {
-        Fulfill(new ImmediateResult<int>(input));
+        _input = input;
     }
 
-    public override Task Execute()
+    protected override Task<IOperationResult<int>> ExecuteCoreAsync()
     {
-        return Task.CompletedTask;
+        return Task.FromResult<IOperationResult<int>>(new ImmediateResult<int>(_input));
     }
 }

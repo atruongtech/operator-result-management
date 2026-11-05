@@ -42,13 +42,13 @@ public class UserInputMultiplyOperation : OperationInstanceBase<int>
         _input = input;
     }
 
-    public override async Task Execute()
+    protected override async Task<IOperationResult<int>> ExecuteCoreAsync()
     {
         var toMultiply = await _input.Promise();
         var multiplyBy = _context.PromptProvider.PromptUserForIntInput("Enter an integer to multiply by:");
         var product = toMultiply.GetResult() * multiplyBy;
 
         _context.PromptProvider.InformUser($"Input was: {toMultiply.GetResult()} and result is {product}.");
-        Fulfill(new ImmediateResult<int>(toMultiply.GetResult() * multiplyBy));
+        return new ImmediateResult<int>(product);
     }
 }
