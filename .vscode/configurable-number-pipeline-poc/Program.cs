@@ -24,14 +24,13 @@ while (true)
 var inputInstruction = new DirectInputInstruction(input);
 var procedure = new FactorInstruction(inputInstruction);
 
-List<IInstruction> process = [inputInstruction, procedure];
-var context = new operator_result_management.ExecutionContext();
+List<IInstruction<NumberPipelineExecutionContext>> process = [inputInstruction, procedure];
+var context = new NumberPipelineExecutionContext();
 var operations = process.Select(i => i.GetOperation(context)).ToList();
 
 await Task.WhenAll(operations.Select(o => o.Execute()));
 
 var factors = (await procedure.GetTypedOperation(context).Promise()).GetResult();
-
 Console.WriteLine(factors.Count == 0
     ? $"{input} has no prime factors."
     : $"Prime factors of {input}: {string.Join(", ", factors)}");

@@ -5,19 +5,19 @@ using operator_result_management.Basic;
 
 namespace configurable_number_pipeline_poc;
 
-public class FactorInstruction : IInstruction<ImmutableList<int>>
+public class FactorInstruction : IInstruction<ImmutableList<int>, NumberPipelineExecutionContext>
 {
-    private readonly IInstruction<int> _input;
+    private readonly IInstruction<int, NumberPipelineExecutionContext> _input;
 
     public Guid Id {get;}
 
-    public FactorInstruction(IInstruction<int> input)
+    public FactorInstruction(IInstruction<int, NumberPipelineExecutionContext> input)
     {
         Id = Guid.NewGuid();
         _input = input;
     }
 
-    public IOperationInstance<ImmutableList<int>> GetTypedOperation(IExecutionContext context)
+    public IOperationInstance<ImmutableList<int>> GetTypedOperation(NumberPipelineExecutionContext context)
     {
         if (context.Operations.TryGetValue(this, out var existing) && existing is IExecutionContextContainer<FactorOperation> factor)
             return factor.Value;
@@ -27,7 +27,7 @@ public class FactorInstruction : IInstruction<ImmutableList<int>>
         return newop;
     }
 
-    public IOperationInstance GetOperation(IExecutionContext context) => GetTypedOperation(context);
+    public IOperationInstance GetOperation(NumberPipelineExecutionContext context) => GetTypedOperation(context);
 }
 
 public class FactorOperation : OperationInstanceBase<ImmutableList<int>>

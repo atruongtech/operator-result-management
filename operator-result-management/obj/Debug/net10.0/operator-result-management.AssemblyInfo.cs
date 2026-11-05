@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("operator-result-management")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2d5bc0e2bd0bc3ef15c2c77d46a64d850fc9cfde")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8f78fbaebb979c1c46180f4d5783f30b34218cc9")]
 [assembly: System.Reflection.AssemblyProductAttribute("operator-result-management")]
 [assembly: System.Reflection.AssemblyTitleAttribute("operator-result-management")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

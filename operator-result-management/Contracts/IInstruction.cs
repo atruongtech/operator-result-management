@@ -2,9 +2,7 @@ namespace operator_result_management
 {
     public interface IInstruction
     {
-        Guid Id { get; }
-
-        IOperationInstance GetOperation(IExecutionContext context);
+        Guid Id {get;}
     }
 
     /// <summary>
@@ -13,7 +11,8 @@ namespace operator_result_management
     /// corresponding to the step.
     /// </summary>
     /// <typeparam name="TResult"></typeparam>
-    public interface IInstruction<TResult> : IInstruction
+    public interface IInstruction<in TContext> : IInstruction
+     where TContext : IExecutionContext 
     {
         /// <summary>
         /// Return a handle to the instance corresponding to this step in a process
@@ -21,6 +20,13 @@ namespace operator_result_management
         /// </summary>
         /// <param name="context"></param>
         /// <returns>Task that returns when the corresponding instance is available.</returns>
-        IOperationInstance<TResult> GetTypedOperation(IExecutionContext context);
+
+        IOperationInstance GetOperation(TContext context);
+    }
+
+    public interface IInstruction<TResult, TContext> : IInstruction<TContext>
+     where TContext : IExecutionContext
+    {        
+        IOperationInstance<TResult> GetTypedOperation(TContext context);
     }
 }

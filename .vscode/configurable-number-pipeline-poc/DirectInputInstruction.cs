@@ -3,7 +3,7 @@ using operator_result_management.Basic;
 
 namespace configurable_number_pipeline_poc;
 
-public sealed class DirectInputInstruction : IInstruction<int>
+public sealed class DirectInputInstruction : IInstruction<int, NumberPipelineExecutionContext>
 {
     private readonly int _input;
 
@@ -16,7 +16,7 @@ public sealed class DirectInputInstruction : IInstruction<int>
 
     public int Input => _input;
 
-    public IOperationInstance<int> GetTypedOperation(IExecutionContext context)
+    public IOperationInstance<int> GetTypedOperation(NumberPipelineExecutionContext context)
     {
         if (context.Operations.TryGetValue(this, out var existing) &&
             existing is IExecutionContextContainer<DirectInputOperation> input)
@@ -27,7 +27,7 @@ public sealed class DirectInputInstruction : IInstruction<int>
         return operation;
     }
 
-    public IOperationInstance GetOperation(IExecutionContext context)
+    public IOperationInstance GetOperation(NumberPipelineExecutionContext context)
     {
         return GetTypedOperation(context);
     }
