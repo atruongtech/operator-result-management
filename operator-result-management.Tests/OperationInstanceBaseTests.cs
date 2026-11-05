@@ -208,7 +208,7 @@ public class OperationInstanceBaseTests
     [Fact]
     public async Task FactorCanStartBeforeInputExecution()
     {
-        var context = new ExecutionContextBase();
+        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider());
         var input = new DirectInputOperation(context, 36);
         var factor = new FactorOperation(context, input);
         var execution = factor.Execute();
@@ -225,7 +225,7 @@ public class OperationInstanceBaseTests
     [Fact]
     public async Task FactorFailureFaultsPromiseToo()
     {
-        var context = new ExecutionContextBase();
+        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider());
         var input = new DirectInputOperation(context, 0);
         var factor = new FactorOperation(context, input);
 

@@ -33,13 +33,8 @@ Console.CancelKeyPress += cancelHandler;
 try
 {
     var context = new NumberPipelineExecutionContext(new(), cancellation.Token);
-    var factorOperation = factor.GetTypedOperation(context);
+    factor.GetTypedOperation(context);
     await context.ExecuteAsync();
-
-    var factors = (await factorOperation.Promise()).GetResult();
-    Console.WriteLine(factors.Count == 0
-        ? $"{input} has no prime factors."
-        : $"Prime factors: {string.Join(", ", factors)}");
 
     return 0;
 }

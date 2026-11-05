@@ -213,7 +213,7 @@ public class ExecutionContextTests
     [Fact]
     public async Task UpstreamFailureFaultsContextAndDependentPromise()
     {
-        var context = new ExecutionContextBase();
+        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider());
         var completion = NewCompletionSource<IOperationResult<int>>();
         var upstream = context.GetOrAddOperation(new TestInstruction(),
             () => new TestOperation(context, token => completion.Task.WaitAsync(token)));
@@ -261,7 +261,7 @@ public class ExecutionContextTests
     public async Task ContextCancellationInterruptsRunningWorkAndDependencyWaits()
     {
         using var cancellation = new CancellationTokenSource();
-        var context = new ExecutionContextBase(cancellation.Token);
+        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider(), cancellation.Token);
         var completion = NewCompletionSource<IOperationResult<int>>();
         CancellationToken receivedToken = default;
         var upstream = context.GetOrAddOperation(new TestInstruction(),

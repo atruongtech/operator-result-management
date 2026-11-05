@@ -28,10 +28,12 @@ public class FactorInstruction : IInstruction<ImmutableList<int>, NumberPipeline
 
 public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
 {
+    private readonly NumberPipelineExecutionContext _context;
     private readonly IOperationInstance<int> _input;
 
-    public FactorOperation(IExecutionContext context, IOperationInstance<int> input) : base(context)
+    public FactorOperation(NumberPipelineExecutionContext context, IOperationInstance<int> input) : base(context)
     {
+        _context = context;
         _input = input;
     }
 
@@ -40,7 +42,13 @@ public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
     {
         var result = await _input.Promise().WaitAsync(cancellationToken);
         var input = result.GetResult();
-        return GetPrimeFactors(input, cancellationToken);
+        var factorResult = GetPrimeFactors(input, cancellationToken);
+        var factors = factorResult.GetResult();
+        cancellationToken.ThrowIfCancellationRequested();
+        _context.PromptProvider.InformUser(factors.Count == 0
+            ? $"{input} has no prime factors."
+            : $"Prime factors of {input}: {string.Join(", ", factors)}");
+        return factorResult;
     }
 
     private IOperationResult<ImmutableList<int>> GetPrimeFactors(int number, CancellationToken cancellationToken)
