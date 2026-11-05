@@ -22,17 +22,18 @@ while (true)
 }
 
 var inputInstruction = new DirectInputInstruction(input);
-var procedure = new FactorInstruction(inputInstruction);
+var multiply = new UserInputMultiplyInstruction(inputInstruction);
+var factor = new FactorInstruction(multiply);
 
-List<IInstruction<NumberPipelineExecutionContext>> process = [inputInstruction, procedure];
-var context = new NumberPipelineExecutionContext();
+List<IInstruction<NumberPipelineExecutionContext>> process = [inputInstruction, multiply, factor];
+var context = new NumberPipelineExecutionContext(new());
 var operations = process.Select(i => i.GetOperation(context)).ToList();
 
 await Task.WhenAll(operations.Select(o => o.Execute()));
 
-var factors = (await procedure.GetTypedOperation(context).Promise()).GetResult();
+var factors = (await factor.GetTypedOperation(context).Promise()).GetResult();
 Console.WriteLine(factors.Count == 0
     ? $"{input} has no prime factors."
-    : $"Prime factors of {input}: {string.Join(", ", factors)}");
+    : $"Prime factors: {string.Join(", ", factors)}");
 
 return 0;

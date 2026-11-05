@@ -77,20 +77,3 @@ public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
         return new ImmediateResult<ImmutableList<int>>([.. factors]);
     }
 }
-
-// public class GenericConversionInstruction<T, U> : IInstruction<U>
-// {
-//     private readonly Func<T, U> _converter;
-
-//     public Guid Id => new();
-
-//     public GenericConversionInstruction(Func<T, U> converter)
-//     {
-//         _converter = converter;
-//     }
-
-//     public Task<IOperationInstance<U>> Promise(operator_result_management.ExecutionContext context)
-//     {
-//         throw new NotImplementedException();
-//     }
-// }

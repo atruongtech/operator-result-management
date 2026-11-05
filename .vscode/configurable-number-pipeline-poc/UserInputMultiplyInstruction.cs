@@ -1,0 +1,54 @@
+using System;
+using operator_result_management;
+using operator_result_management.Basic;
+
+namespace configurable_number_pipeline_poc;
+
+public class UserInputMultiplyInstruction : IInstruction<int, NumberPipelineExecutionContext>
+{
+    private readonly IInstruction<int, NumberPipelineExecutionContext> _input;
+
+    public Guid Id => new();
+
+    public UserInputMultiplyInstruction(IInstruction<int, NumberPipelineExecutionContext> input)
+    {
+        _input = input;
+    }
+
+    public IOperationInstance GetOperation(NumberPipelineExecutionContext context)
+    {
+        return GetTypedOperation(context);
+    }
+
+    public IOperationInstance<int> GetTypedOperation(NumberPipelineExecutionContext context)
+    {
+        if (context.Operations.TryGetValue(this, out var existing) && existing is IExecutionContextContainer<UserInputMultiplyOperation> multiply)
+            return multiply.Value;
+        
+        var newop = new UserInputMultiplyOperation(context, _input.GetTypedOperation(context));
+        context.AddOperation(this, new ExecutionContextContainer<UserInputMultiplyOperation>(newop));
+        return newop;
+    }
+}
+
+public class UserInputMultiplyOperation : OperationInstanceBase<int>
+{
+    private readonly NumberPipelineExecutionContext _context;
+    private readonly IOperationInstance<int> _input;
+
+    public UserInputMultiplyOperation(NumberPipelineExecutionContext context, IOperationInstance<int> input)
+    {
+        _context = context;
+        _input = input;
+    }
+
+    public override async Task Execute()
+    {
+        var toMultiply = await _input.Promise();
+        var multiplyBy = _context.PromptProvider.PromptUserForIntInput("Enter an integer to multiply by:");
+        var product = toMultiply.GetResult() * multiplyBy;
+
+        _context.PromptProvider.InformUser($"Input was: {toMultiply.GetResult()} and result is {product}.");
+        Fulfill(new ImmediateResult<int>(toMultiply.GetResult() * multiplyBy));
+    }
+}
