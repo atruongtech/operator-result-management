@@ -61,7 +61,7 @@ All consumers receive the same published result. Prefer immutable result values;
 
 ## Define and run a process
 
-Compose instructions with `Add` and `Append`, create a fresh execution context, and register the process before executing it. The repository's [configurable number pipeline](.vscode/configurable-number-pipeline-poc/Program.cs) serves as the usage example.
+Compose instructions with `Add` and `Append`, create a fresh execution context, and register the process before executing it. The repository's [configurable number pipeline](configurable-number-pipeline-poc/Program.cs) serves as the usage example.
 
 `Register(process)` registers every instruction currently in the process. Registering an individual instruction afterward returns its existing operation; it does not create or execute another one. Use typed registration to obtain an operation whose result you can observe through `Promise()`.
 
@@ -116,4 +116,6 @@ The mapping retains instruction objects while the context or a returned mapping 
 
 ## Repository example
 
-The [configurable number pipeline](.vscode/configurable-number-pipeline-poc/Program.cs) demonstrates a derived execution context supplying user-interface services, typed process composition, and cancellation.
+The [configurable number pipeline](configurable-number-pipeline-poc/Program.cs) demonstrates a derived execution context supplying user-interface services, typed process composition, and cancellation.
+
+In VS Code, select **Configurable number pipeline** in the Run and Debug dropdown, then use **Run > Run Without Debugging** (Ctrl+F5). The launch configuration builds the solution first and runs the app in the integrated terminal for interactive input. **Ctrl+Shift+B** builds the solution without running the app.

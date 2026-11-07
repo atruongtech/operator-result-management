@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\operator-result-management\operator-result-management.csproj" />
+    <ProjectReference Include="..\operator-result-management\operator-result-management.csproj" />
   </ItemGroup>
 
 </Project>

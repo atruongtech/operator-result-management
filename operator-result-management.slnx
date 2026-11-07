@@ -1,7 +1,5 @@
 <Solution>
-  <Folder Name="/.vscode/">
-    <Project Path=".vscode/configurable-number-pipeline-poc/configurable-number-pipeline-poc.csproj" />
-  </Folder>
+  <Project Path="configurable-number-pipeline-poc/configurable-number-pipeline-poc.csproj" />
   <Project Path="operator-result-management.Tests/operator-result-management.Tests.csproj" />
   <Project Path="operator-result-management/operator-result-management.csproj" />
 </Solution>

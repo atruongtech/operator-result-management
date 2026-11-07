@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Configurable number pipeline",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "Build solution",
+            "program": "${workspaceFolder}\\configurable-number-pipeline-poc\\bin\\Debug\\net10.0\\configurable-number-pipeline-poc.dll",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        }
+    ]
+}
