@@ -13,27 +13,33 @@ namespace operator_result_management
         /// Stable read-only collection of distinct instructions in dependency-first insertion order.
         /// Instructions are identified by reference, not Id or value equality.
         /// Edits replace this collection rather than mutate previously returned collections.
+        /// Instruction objects are shared references, not deep-copy snapshots.
         /// </summary>
         IReadOnlyList<IInstruction> Instructions { get; }
     }
 
     /// <summary>
     /// A process definition whose instructions support the given execution context.
-    /// Instructions must be immutable; edits add steps without changing existing runs.
+    /// Instructions may be mutable; registered operations must remain unaffected by
+    /// later instruction edits. The process does not snapshot instruction state.
     /// </summary>
     public interface IProcess<TContext> : IProcess where TContext : IExecutionContext
     {
         /// <summary>
         /// Immutable list of context-compatible instruction references.
-        /// Instructions themselves are shared immutable definitions, not copies.
+        /// Instructions themselves are shared references and may be mutable, not copies.
         /// Process retains the same collection until its graph changes, allowing clients
-        /// to compare collection references when detecting effective edits.
+        /// to compare collection references when detecting membership changes.
+        /// In-place instruction edits do not replace the collection or automatically
+        /// revalidate dependencies or update ordering; callers must coordinate such edits.
         /// </summary>
         new ImmutableList<IInstruction<TContext>> Instructions { get; }
 
         /// <summary>
         /// Atomically adds a step and its transitive dependencies, validating context
         /// compatibility and cycles. Repeated additions reuse existing instruction instances.
+        /// After dependency edits, call Add again to discover and validate the current
+        /// dependency graph. Previously added instructions remain in the collection.
         /// </summary>
         void Add(IInstruction<TContext> instruction);
 

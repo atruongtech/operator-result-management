@@ -37,6 +37,8 @@ namespace operator_result_management
         /// Captures the process's current instruction references in a run request and registers
         /// them without executing. Returns that request for observing or replaying the selection.
         /// Later process additions affect future requests only.
+        /// The request retains live instruction references, not snapshots of their state;
+        /// replay in a fresh context uses their configuration at registration time.
         /// </summary>
         public static ProcessRunRequest<TContext> Register<TContext>(
             this TContext context, IProcess<TContext> process)
@@ -50,7 +52,8 @@ namespace operator_result_management
         }
 
         /// <summary>
-        /// Registers an immutable run selection and its upstream dependencies without executing.
+        /// Registers a fixed selection of live instruction references and their current
+        /// upstream dependencies without executing. The selection does not snapshot instruction state.
         /// Use a fresh context to run only this subset. The request does not modify its process.
         /// </summary>
         public static ProcessRunRequest<TContext> Register<TContext>(

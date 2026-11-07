@@ -2,6 +2,9 @@ namespace operator_result_management
 {
     /// <summary>
     /// Immutable run-specific selection of instruction references from a process.
+    /// Only the selection is fixed; instruction objects are not copied and may be mutable.
+    /// Replaying the request in a fresh context uses instruction state at registration,
+    /// not necessarily the state used by an earlier run.
     /// Selected instructions need not be graph sinks. Their upstream dependencies are
     /// discovered during registration, not stored as selection state on the process.
     /// </summary>
@@ -16,7 +19,7 @@ namespace operator_result_management
 
         /// <summary>
         /// Captures references to every instruction currently in the process.
-        /// Later additions do not change this request.
+        /// Later additions do not change this request. Instruction state is not snapshotted.
         /// </summary>
         public ProcessRunRequest(IProcess<TContext> process)
         {
@@ -55,6 +58,8 @@ namespace operator_result_management
         /// Registers the selection and its transitive dependencies without executing.
         /// Use a fresh context for partial execution: separately registered operations
         /// would also execute. Later process or caller selection edits do not change this request.
+        /// Instruction configuration and dependencies are captured by instruction
+        /// implementations when creating operations, not when constructing this request.
         /// </summary>
         public void Register(TContext context)
         {

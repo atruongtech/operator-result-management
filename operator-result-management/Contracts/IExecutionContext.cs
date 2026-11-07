@@ -11,6 +11,9 @@ namespace operator_result_management
         /// <summary>
         /// Returns a read-only snapshot of registered executable operations,
         /// keyed by instruction reference identity.
+        /// Only the registry entries are copied. Keys and values are the original
+        /// instruction and operation objects, not deep-copy snapshots. Mutable instruction
+        /// keys expose their current state, not necessarily the state used by this run.
         /// </summary>
         IReadOnlyDictionary<IInstruction, IOperationInstance> Operations { get; }
 
@@ -27,6 +30,9 @@ namespace operator_result_management
         /// Factories may register dependencies but must not execute or wait for operations.
         /// Instruction implementations must use this method to register their operations
         /// and resolve all dependencies in the same context.
+        /// Factories must capture run-specific configuration and upstream operations so
+        /// later instruction edits cannot affect the registered operation. This method
+        /// does not snapshot instruction state or refresh an existing registration.
         /// New registrations are rejected after execution starts; existing lookups remain valid.
         /// </summary>
         TOperation GetOrAddOperation<TOperation>(IInstruction instruction, Func<TOperation> factory)
