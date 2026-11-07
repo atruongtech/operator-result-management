@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using configurable_number_pipeline_poc;
 using operator_result_management.Basic;
 using Xunit;
 
@@ -363,7 +362,7 @@ public class ProcessTests
             {
                 "null-list" => null!,
                 "null-entry" => Array.AsReadOnly<IInstruction>([new Step(1), null!]),
-                "wrong-context" => Array.AsReadOnly<IInstruction>([new Step(1), new DirectInputInstruction(1)]),
+                "wrong-context" => Array.AsReadOnly<IInstruction>([new Step(1), new SpecializedInstruction()]),
                 _ => throw new ArgumentOutOfRangeException(nameof(invalid))
             }
         };
@@ -514,26 +513,27 @@ public class ProcessTests
     }
 
     [Fact]
-    public void NumberPipelineExposesEveryStepWithoutPromptingOrExecuting()
+    public void RegisteringProcessExposesEveryStepWithoutExecuting()
     {
-        var process = new ProcessBase<NumberPipelineExecutionContext>();
-        var input = new DirectInputInstruction(12);
+        var process = new ProcessBase<ExecutionContextBase>();
+        var input = new Step(12);
         process.Add(input);
-        var multiply = process.Append(input,
-            source => new UserInputMultiplyInstruction(source));
-        var factor = process.Append(multiply, source => new FactorInstruction(source));
-        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider());
+        var middle = process.Append(input, source => new Step(1, source));
+        var output = process.Append(middle, source => new Step(2, source));
+        var context = new ExecutionContextBase();
 
         var request = context.Register(process);
 
-        Assert.Equal(new IInstruction[] { input, multiply, factor }, process.Instructions);
+        Assert.Equal(new IInstruction[] { input, middle, output }, process.Instructions);
         Assert.Equal(3, request.SelectedInstructions.Count);
         Assert.Equal(3, context.Operations.Count);
-        Assert.False(context.Register(factor).Promise().IsCompleted);
-        Assert.Same(input, Assert.Single(multiply.Dependencies));
-        Assert.Same(multiply, Assert.Single(factor.Dependencies));
+        Assert.False(context.Register(output).Promise().IsCompleted);
+        Assert.All(context.Operations.Values, operation =>
+            Assert.Equal(0, Assert.IsType<TestOperation>(operation).InvocationCount));
+        Assert.Same(input, Assert.Single(middle.Dependencies));
+        Assert.Same(middle, Assert.Single(output.Dependencies));
         Assert.Throws<NotSupportedException>(() =>
-            Assert.IsAssignableFrom<IList<IInstruction>>(factor.Dependencies).Clear());
+            Assert.IsAssignableFrom<IList<IInstruction<int, ExecutionContextBase>>>(output.Dependencies).Clear());
     }
 
     private class Step : IInstruction<int, ExecutionContextBase>
@@ -606,6 +606,20 @@ public class ProcessTests
         }
 
         public IOperationInstance GetOperation(ExecutionContextBase context) => GetTypedOperation(context);
+    }
+
+    private sealed class SpecializedContext : ExecutionContextBase
+    {
+    }
+
+    private sealed class SpecializedInstruction : IInstruction<SpecializedContext>
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+
+        public IReadOnlyList<IInstruction> Dependencies => Array.Empty<IInstruction>();
+
+        public IOperationInstance GetOperation(SpecializedContext context) =>
+            throw new InvalidOperationException("Incompatible instruction must not register.");
     }
 
     private sealed class MalformedInstruction : IInstruction<ExecutionContextBase>

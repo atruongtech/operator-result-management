@@ -1,4 +1,3 @@
-using configurable_number_pipeline_poc;
 using operator_result_management.Basic;
 using Xunit;
 
@@ -11,32 +10,33 @@ public class ExecutionContextTests
     [Fact]
     public async Task RegisteringRootRegistersAndExecutesItsDependencies()
     {
-        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider());
-        var input = new DirectInputInstruction(36);
-        var factor = new FactorInstruction(input);
-        var operation = context.Register(factor);
+        var context = new ExecutionContextBase();
+        var input = new GraphInstruction(36);
+        var output = new GraphInstruction(0, input);
+        var operation = context.Register(output);
 
         Assert.Equal(2, context.Operations.Count);
         Assert.False(operation.Promise().IsCompleted);
         var execution = context.ExecuteAsync();
         await execution.WaitAsync(_timeout);
 
-        Assert.Equal(new[] { 2, 2, 3, 3 },
-            (await operation.Promise().WaitAsync(_timeout)).GetResult());
-        Assert.Same(operation, context.Register(factor));
+        Assert.Equal(36, (await operation.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Same(operation, context.Register(output));
+        Assert.All(context.Operations.Values, registered =>
+            Assert.Equal(1, Assert.IsType<TestOperation>(registered).InvocationCount));
         Assert.Same(execution, context.ExecuteAsync());
     }
 
     [Fact]
     public async Task ConcurrentRootLookupsShareEntireOperationGraph()
     {
-        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider());
-        var factor = new FactorInstruction(new DirectInputInstruction(36));
+        var context = new ExecutionContextBase();
+        var output = new GraphInstruction(0, new GraphInstruction(36));
         var start = NewCompletionSource<bool>();
         var callers = Enumerable.Range(0, 64).Select(async _ =>
         {
             await start.Task;
-            return context.Register(factor);
+            return context.Register(output);
         }).ToArray();
         start.SetResult(true);
         var operations = await Task.WhenAll(callers).WaitAsync(_timeout);
@@ -212,20 +212,6 @@ public class ExecutionContextTests
     }
 
     [Fact]
-    public void PipelineInstructionIdsAreStableAndDistinct()
-    {
-        var input = new DirectInputInstruction(42);
-        var first = new UserInputMultiplyInstruction(input);
-        var second = new UserInputMultiplyInstruction(input);
-        var factor = new FactorInstruction(first);
-        var ids = new[] { input.Id, first.Id, second.Id, factor.Id };
-
-        Assert.All(ids, id => Assert.NotEqual(Guid.Empty, id));
-        Assert.Equal(ids, new[] { input.Id, first.Id, second.Id, factor.Id });
-        Assert.Equal(4, ids.Distinct().Count());
-    }
-
-    [Fact]
     public async Task StartsAllOperationsBeforeAwaitingDependencies()
     {
         var context = new ExecutionContextBase();
@@ -282,11 +268,11 @@ public class ExecutionContextTests
         Assert.Same(operation, context.GetOrAddOperation<TestOperation>(instruction,
             () => throw new Exception("Existing lookup must not invoke factory.")));
         Assert.Throws<InvalidOperationException>(() =>
-            context.GetOrAddOperation(new TestInstruction(), () => new DirectInputOperation(context, 1)));
+            context.GetOrAddOperation(new TestInstruction(), () => new CountingOperation()));
         completion.SetResult(new ImmediateResult<int>(42));
         await execution.WaitAsync(_timeout);
         Assert.Throws<InvalidOperationException>(() =>
-            context.GetOrAddOperation(new TestInstruction(), () => new DirectInputOperation(context, 1)));
+            context.GetOrAddOperation(new TestInstruction(), () => new CountingOperation()));
     }
 
     [Fact]
@@ -295,7 +281,7 @@ public class ExecutionContextTests
         var context = new ExecutionContextBase();
         var snapshot = context.Operations;
         var instruction = new TestInstruction();
-        var operation = context.GetOrAddOperation(instruction, () => new DirectInputOperation(context, 1));
+        var operation = context.GetOrAddOperation(instruction, () => new CountingOperation());
 
         Assert.Empty(snapshot);
         Assert.Same(operation, context.Operations[instruction]);
@@ -309,7 +295,7 @@ public class ExecutionContextTests
     {
         var context = new ExecutionContextBase();
         var instruction = new TestInstruction();
-        context.GetOrAddOperation(instruction, () => new DirectInputOperation(context, 1));
+        context.GetOrAddOperation(instruction, () => new CountingOperation());
 
         Assert.Throws<InvalidOperationException>(() =>
             context.GetOrAddOperation(instruction,
@@ -325,13 +311,13 @@ public class ExecutionContextTests
         var error = new InvalidOperationException("Factory failed.");
 
         Assert.Same(error, Assert.Throws<InvalidOperationException>(() =>
-            context.GetOrAddOperation<DirectInputOperation>(instruction, () => throw error)));
+            context.GetOrAddOperation<CountingOperation>(instruction, () => throw error)));
         Assert.Empty(context.Operations);
         Assert.Throws<InvalidOperationException>(() =>
-            context.GetOrAddOperation<DirectInputOperation>(instruction, () => null!));
+            context.GetOrAddOperation<CountingOperation>(instruction, () => null!));
         Assert.Empty(context.Operations);
 
-        var operation = context.GetOrAddOperation(instruction, () => new DirectInputOperation(context, 1));
+        var operation = context.GetOrAddOperation(instruction, () => new CountingOperation());
         Assert.Same(operation, context.Operations[instruction]);
     }
 
@@ -345,11 +331,11 @@ public class ExecutionContextTests
         var error = Assert.Throws<InvalidOperationException>(() =>
             context.GetOrAddOperation(first, () =>
                 context.GetOrAddOperation(second, () =>
-                    context.GetOrAddOperation(first, () => new DirectInputOperation(context, 1)))));
+                    context.GetOrAddOperation(first, () => new CountingOperation()))));
 
         Assert.Contains("Cyclic", error.Message);
         Assert.Empty(context.Operations);
-        context.GetOrAddOperation(first, () => new DirectInputOperation(context, 1));
+        context.GetOrAddOperation(first, () => new CountingOperation());
     }
 
     [Fact]
@@ -362,10 +348,10 @@ public class ExecutionContextTests
             context.GetOrAddOperation(instruction, () =>
             {
                 context.ExecuteAsync();
-                return new DirectInputOperation(context, 1);
+                return new CountingOperation();
             }));
 
-        context.GetOrAddOperation(instruction, () => new DirectInputOperation(context, 1));
+        context.GetOrAddOperation(instruction, () => new CountingOperation());
         await context.ExecuteAsync().WaitAsync(_timeout);
     }
 
@@ -392,11 +378,12 @@ public class ExecutionContextTests
     [Fact]
     public async Task UpstreamFailureFaultsContextAndDependentPromise()
     {
-        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider());
+        var context = new ExecutionContextBase();
         var completion = NewCompletionSource<IOperationResult<int>>();
         var upstream = context.GetOrAddOperation(new TestInstruction(),
             () => new TestOperation(context, token => completion.Task.WaitAsync(token)));
-        var downstream = context.GetOrAddOperation(new TestInstruction(), () => new FactorOperation(context, upstream));
+        var downstream = context.GetOrAddOperation(new TestInstruction(),
+            () => new TestOperation(context, token => upstream.Promise().WaitAsync(token)));
         var execution = context.ExecuteAsync();
         var error = new InvalidDataException("Upstream failed.");
 
@@ -411,16 +398,16 @@ public class ExecutionContextTests
     }
 
     [Fact]
-    public async Task PreCanceledContextCancelsAllRegisteredPromisesWithoutPrompting()
+    public async Task PreCanceledContextCancelsAllRegisteredPromisesWithoutExecutingCore()
     {
         using var cancellation = new CancellationTokenSource();
-        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider(), cancellation.Token);
-        var inputInstruction = new DirectInputInstruction(36);
-        var multiplyInstruction = new UserInputMultiplyInstruction(inputInstruction);
-        var factorInstruction = new FactorInstruction(multiplyInstruction);
-        var factor = context.Register(factorInstruction);
+        var context = new ExecutionContextBase(cancellation.Token);
+        var inputInstruction = new GraphInstruction(36);
+        var middleInstruction = new GraphInstruction(1, inputInstruction);
+        var outputInstruction = new GraphInstruction(2, middleInstruction);
+        var output = context.Register(outputInstruction);
         var input = context.Register(inputInstruction);
-        var multiply = context.Register(multiplyInstruction);
+        var middle = context.Register(middleInstruction);
         cancellation.Cancel();
 
         var execution = context.ExecuteAsync();
@@ -430,9 +417,11 @@ public class ExecutionContextTests
         Assert.Equal(cancellation.Token, error.CancellationToken);
         Assert.True(execution.IsCanceled);
         await AssertCanceledPromiseAsync(input, cancellation.Token);
-        await AssertCanceledPromiseAsync(multiply, cancellation.Token);
-        await AssertCanceledPromiseAsync(factor, cancellation.Token);
+        await AssertCanceledPromiseAsync(middle, cancellation.Token);
+        await AssertCanceledPromiseAsync(output, cancellation.Token);
         Assert.All(context.Operations.Values, operation => Assert.True(operation.Execute().IsCanceled));
+        Assert.All(context.Operations.Values, operation =>
+            Assert.Equal(0, Assert.IsType<TestOperation>(operation).InvocationCount));
         Assert.Same(execution, context.ExecuteAsync());
     }
 
@@ -440,7 +429,7 @@ public class ExecutionContextTests
     public async Task ContextCancellationInterruptsRunningWorkAndDependencyWaits()
     {
         using var cancellation = new CancellationTokenSource();
-        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider(), cancellation.Token);
+        var context = new ExecutionContextBase(cancellation.Token);
         var completion = NewCompletionSource<IOperationResult<int>>();
         CancellationToken receivedToken = default;
         var upstream = context.GetOrAddOperation(new TestInstruction(),
@@ -449,7 +438,8 @@ public class ExecutionContextTests
                 receivedToken = token;
                 return completion.Task.WaitAsync(token);
             }));
-        var downstream = context.GetOrAddOperation(new TestInstruction(), () => new FactorOperation(context, upstream));
+        var downstream = context.GetOrAddOperation(new TestInstruction(),
+            () => new TestOperation(context, token => upstream.Promise().WaitAsync(token)));
         var execution = context.ExecuteAsync();
         Assert.Equal(cancellation.Token, receivedToken);
         Assert.False(execution.IsCompleted);
@@ -528,7 +518,7 @@ public class ExecutionContextTests
 
         Assert.Same(execution, context.ExecuteAsync());
         Assert.Throws<InvalidOperationException>(() =>
-            context.GetOrAddOperation(new TestInstruction(), () => new DirectInputOperation(context, 1)));
+            context.GetOrAddOperation(new TestInstruction(), () => new CountingOperation()));
     }
 
     [Fact]

@@ -1,4 +1,3 @@
-using configurable_number_pipeline_poc;
 using operator_result_management.Basic;
 using Xunit;
 
@@ -193,50 +192,22 @@ public class OperationInstanceBaseTests
     }
 
     [Fact]
-    public async Task DirectInputRequiresExecutionBeforePublishingResult()
+    public async Task DependentOperationCanStartBeforeUpstreamExecution()
     {
-        var operation = new DirectInputOperation(new ExecutionContextBase(), 12);
-
-        Assert.False(operation.Promise().IsCompleted);
-        var execution = operation.Execute();
-        await execution.WaitAsync(_timeout);
-
-        Assert.Equal(12, (await operation.Promise().WaitAsync(_timeout)).GetResult());
-        Assert.Same(execution, operation.Execute());
-    }
-
-    [Fact]
-    public async Task FactorCanStartBeforeInputExecution()
-    {
-        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider());
-        var input = new DirectInputOperation(context, 36);
-        var factor = new FactorOperation(context, input);
-        var execution = factor.Execute();
+        var result = new ImmediateResult<int>(36);
+        var upstream = new TestOperation(() => Task.FromResult<IOperationResult<int>>(result));
+        var downstream = new TestOperation(() => upstream.Promise());
+        var execution = downstream.Execute();
 
         Assert.False(execution.IsCompleted);
-        await input.Execute().WaitAsync(_timeout);
+        Assert.Equal(0, upstream.InvocationCount);
+        await upstream.Execute().WaitAsync(_timeout);
         await execution.WaitAsync(_timeout);
 
-        Assert.Equal(new[] { 2, 2, 3, 3 },
-            (await factor.Promise().WaitAsync(_timeout)).GetResult());
-        Assert.Same(execution, factor.Execute());
-    }
-
-    [Fact]
-    public async Task FactorFailureFaultsPromiseToo()
-    {
-        var context = new NumberPipelineExecutionContext(new UserInterfaceProvider());
-        var input = new DirectInputOperation(context, 0);
-        var factor = new FactorOperation(context, input);
-
-        await input.Execute().WaitAsync(_timeout);
-        var execution = factor.Execute();
-
-        var error = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => execution.WaitAsync(_timeout));
-        Assert.Same(error, await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => factor.Promise().WaitAsync(_timeout)));
-        Assert.Same(execution, factor.Execute());
+        Assert.Same(result, await downstream.Promise().WaitAsync(_timeout));
+        Assert.Same(execution, downstream.Execute());
+        Assert.Equal(1, upstream.InvocationCount);
+        Assert.Equal(1, downstream.InvocationCount);
     }
 
     private static TaskCompletionSource<T> NewCompletionSource<T>()
