@@ -25,7 +25,8 @@ var process = new ProcessBase<NumberPipelineExecutionContext>();
 process.Add(inputInstruction);
 var multiply = process.Append(inputInstruction,
     source => new UserInputMultiplyInstruction(source));
-process.Append(multiply, source => new FactorInstruction(source));
+var factor = process.Append(multiply, source => new FactorInstruction(source));
+process.Append(factor, source => new MinMaxDifferenceInstruction(source));
 
 using var cancellation = new CancellationTokenSource();
 ConsoleCancelEventHandler cancelHandler = (_, args) =>
