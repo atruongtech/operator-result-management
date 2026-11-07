@@ -21,8 +21,11 @@ while (true)
 }
 
 var inputInstruction = new DirectInputInstruction(input);
-var multiply = new UserInputMultiplyInstruction(inputInstruction);
-var factor = new FactorInstruction(multiply);
+var process = new ProcessBase<NumberPipelineExecutionContext>();
+process.Add(inputInstruction);
+var multiply = process.Append(inputInstruction,
+    source => new UserInputMultiplyInstruction(source));
+process.Append(multiply, source => new FactorInstruction(source));
 
 using var cancellation = new CancellationTokenSource();
 ConsoleCancelEventHandler cancelHandler = (_, args) =>
@@ -34,7 +37,7 @@ Console.CancelKeyPress += cancelHandler;
 try
 {
     var context = new NumberPipelineExecutionContext(new(), cancellation.Token);
-    context.Register(factor);
+    context.Register(process);
     await context.ExecuteAsync();
 
     return 0;

@@ -3,6 +3,8 @@ namespace operator_result_management
     /// <summary>
     /// Defines a step whose instance identifies shared work within an execution context.
     /// Separate instances represent separate steps, even with identical configuration.
+    /// Configuration and dependencies must remain immutable after construction so that
+    /// editing a process definition cannot change an existing run.
     /// </summary>
     public interface IInstruction
     {
@@ -10,6 +12,13 @@ namespace operator_result_management
         /// Stable metadata identifier for this instruction. Not used as the registry key.
         /// </summary>
         Guid Id { get; }
+
+        /// <summary>
+        /// Immutable direct upstream dependencies, in input order. Must contain every
+        /// instruction whose operation this step consumes, with no null entries.
+        /// Registration must resolve these same dependencies in the owning context.
+        /// </summary>
+        IReadOnlyList<IInstruction> Dependencies { get; }
     }
 
     /// <summary>

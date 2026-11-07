@@ -11,10 +11,14 @@ public class FactorInstruction : IInstruction<ImmutableList<int>, NumberPipeline
 
     public Guid Id {get;}
 
+    public IReadOnlyList<IInstruction> Dependencies { get; }
+
     public FactorInstruction(IInstruction<int, NumberPipelineExecutionContext> input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         Id = Guid.NewGuid();
         _input = input;
+        Dependencies = Array.AsReadOnly<IInstruction>([input]);
     }
 
     public IOperationInstance<ImmutableList<int>> GetTypedOperation(NumberPipelineExecutionContext context)

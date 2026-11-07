@@ -1,14 +1,14 @@
 namespace operator_result_management
 {
     /// <summary>
-    /// Explicit entry points for registering the desired outputs of a process run.
+    /// Explicit entry points for registering instructions, complete processes, or run selections.
     /// </summary>
     public static class ExecutionContextExtensions
     {
         /// <summary>
         /// Registers an instruction and its transitive dependencies without executing them.
         /// Reusing the same instruction instance in this context returns the same operation;
-        /// a separate context creates independent operations. Register every desired output
+        /// a separate context creates independent operations. Register every selected instruction
         /// before execution starts. Existing registrations remain accessible afterward.
         /// </summary>
         public static IOperationInstance<TResult> Register<TResult, TContext>(
@@ -31,6 +31,36 @@ namespace operator_result_management
             ArgumentNullException.ThrowIfNull(context);
             ArgumentNullException.ThrowIfNull(instruction);
             return instruction.GetOperation(context);
+        }
+
+        /// <summary>
+        /// Captures the process's current instruction references in a run request and registers
+        /// them without executing. Returns that request for observing or replaying the selection.
+        /// Later process additions affect future requests only.
+        /// </summary>
+        public static ProcessRunRequest<TContext> Register<TContext>(
+            this TContext context, IProcess<TContext> process)
+            where TContext : IExecutionContext
+        {
+            ArgumentNullException.ThrowIfNull(context);
+            ArgumentNullException.ThrowIfNull(process);
+            var request = new ProcessRunRequest<TContext>(process);
+            request.Register(context);
+            return request;
+        }
+
+        /// <summary>
+        /// Registers an immutable run selection and its upstream dependencies without executing.
+        /// Use a fresh context to run only this subset. The request does not modify its process.
+        /// </summary>
+        public static ProcessRunRequest<TContext> Register<TContext>(
+            this TContext context, ProcessRunRequest<TContext> request)
+            where TContext : IExecutionContext
+        {
+            ArgumentNullException.ThrowIfNull(context);
+            ArgumentNullException.ThrowIfNull(request);
+            request.Register(context);
+            return request;
         }
     }
 }

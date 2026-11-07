@@ -35,8 +35,8 @@ namespace operator_result_management
         /// <summary>
         /// Freezes the completed graph, starts all registered operations, and awaits them all.
         /// Repeated calls return the same task, including after failure or cancellation.
-        /// Register every desired output before calling this method; instruction registration
-        /// discovers upstream dependencies, not downstream consumers.
+        /// Register the complete process or a run's selected instructions before calling
+        /// this method; individual registration discovers upstream dependencies, not downstream consumers.
         /// Each distinct registered operation is started once by this context.
         /// Consumers awaiting a shared operation's promise observe the same result, failure,
         /// or cancellation. Execution does not retry; create a new context for a new run.

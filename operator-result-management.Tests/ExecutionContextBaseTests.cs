@@ -560,18 +560,25 @@ public class ExecutionContextTests
     private sealed class TestInstruction : IInstruction
     {
         public Guid Id { get; } = Guid.NewGuid();
+
+        public IReadOnlyList<IInstruction> Dependencies => Array.Empty<IInstruction>();
     }
 
     private class GraphInstruction(int value, params GraphInstruction[] dependencies)
         : IInstruction<int, ExecutionContextBase>
     {
+        private readonly IReadOnlyList<GraphInstruction> _dependencies =
+            Array.AsReadOnly(dependencies.ToArray());
+
         public Guid Id { get; init; } = Guid.NewGuid();
+
+        public IReadOnlyList<IInstruction> Dependencies => _dependencies;
 
         public IOperationInstance<int> GetTypedOperation(ExecutionContextBase context)
         {
             return context.GetOrAddOperation(this, () =>
             {
-                var operations = dependencies.Select(dependency => dependency.GetTypedOperation(context)).ToArray();
+                var operations = _dependencies.Select(dependency => dependency.GetTypedOperation(context)).ToArray();
                 return new TestOperation(context, async token =>
                 {
                     var results = await Task.WhenAll(operations.Select(operation => operation.Promise().WaitAsync(token)));

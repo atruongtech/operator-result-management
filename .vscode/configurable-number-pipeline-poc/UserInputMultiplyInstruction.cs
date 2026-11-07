@@ -10,9 +10,13 @@ public class UserInputMultiplyInstruction : IInstruction<int, NumberPipelineExec
 
     public Guid Id { get; } = Guid.NewGuid();
 
+    public IReadOnlyList<IInstruction> Dependencies { get; }
+
     public UserInputMultiplyInstruction(IInstruction<int, NumberPipelineExecutionContext> input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         _input = input;
+        Dependencies = Array.AsReadOnly<IInstruction>([input]);
     }
 
     public IOperationInstance GetOperation(NumberPipelineExecutionContext context)

@@ -9,6 +9,8 @@ public sealed class DirectInputInstruction : IInstruction<int, NumberPipelineExe
 
     public Guid Id { get; } = Guid.NewGuid();
 
+    public IReadOnlyList<IInstruction> Dependencies => Array.Empty<IInstruction>();
+
     public DirectInputInstruction(int input)
     {
         _input = input;
