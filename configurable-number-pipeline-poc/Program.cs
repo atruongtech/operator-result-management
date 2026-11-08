@@ -18,40 +18,41 @@ var multiply = process.Append(inputInstruction,
 var factor = process.Append(multiply, source => new FactorInstruction(source));
 process.Append(factor, source => new MinMaxDifferenceInstruction(source));
 
-InputScripts.OutputExistingProcess(process);
-while (InputScripts.PromptUserForAction() == ConfigurePipelineUserAction.Edit)
-{
-    var inputs = InputScripts.GetInstructionSelection(process);
-    var bindings = factories.Select(f => f.BindInputs(inputs)).OfType<ReadyResponse>().ToList();
-    var userCreated = InputScripts.SelectBinding([..bindings]).ToList();
-    if (userCreated.Count == 0)
-        continue;
-    process.Add((IInstruction<NumberPipelineExecutionContext>)userCreated.Single());
+while(true)
+{    
     InputScripts.OutputExistingProcess(process);
-}
+    while (InputScripts.PromptUserForAction() == ConfigurePipelineUserAction.Edit)
+    {
+        var inputs = InputScripts.GetInstructionSelection(process);
+        var bindings = factories.Select(f => f.BindInputs(inputs)).OfType<ReadyResponse>().ToList();
+        var userCreated = InputScripts.SelectBinding([..bindings]).ToList();
+        if (userCreated.Count == 0)
+            continue;
+        process.Add((IInstruction<NumberPipelineExecutionContext>)userCreated.Single());
+        InputScripts.OutputExistingProcess(process);
+    }
 
-using var cancellation = new CancellationTokenSource();
-ConsoleCancelEventHandler cancelHandler = (_, args) =>
-{
-    args.Cancel = true;
-    cancellation.Cancel();
-};
-Console.CancelKeyPress += cancelHandler;
-try
-{
-    var context = new NumberPipelineExecutionContext(new(), cancellation.Token);
-    context.Register(process);
-    await context.ExecuteAsync();
-
-    return 0;
-}
-catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-{
-    Console.Error.WriteLine("Execution canceled.");
-    return 1;
-}
-finally
-{
-    Console.CancelKeyPress -= cancelHandler;
+    using var cancellation = new CancellationTokenSource();
+    ConsoleCancelEventHandler cancelHandler = (_, args) =>
+    {
+        args.Cancel = true;
+        cancellation.Cancel();
+    };
+    Console.CancelKeyPress += cancelHandler;
+    try
+    {
+        var context = new NumberPipelineExecutionContext(new(), cancellation.Token);
+        context.Register(process);
+        await context.ExecuteAsync();
+    }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+    {
+        Console.Error.WriteLine("Execution canceled.");
+        return 1;
+    }
+    finally
+    {
+        Console.CancelKeyPress -= cancelHandler;
+    }
 }
 
