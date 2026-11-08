@@ -1,32 +1,19 @@
 using configurable_number_pipeline_poc;
 using operator_result_management;
 
-int input;
-
-while (true)
-{
-    Console.Write("Enter a positive integer: ");
-    var line = Console.ReadLine();
-
-    if (line is null)
-    {
-        Console.Error.WriteLine("No input received.");
-        return 1;
-    }
-
-    if (int.TryParse(line, out input) && input > 0)
-        break;
-
-    Console.Error.WriteLine("Input must be a positive 32-bit integer.");
-}
-
-var inputInstruction = new DirectInputInstruction(input);
+var inputInstruction = new DirectInputInstruction();
 var process = new ProcessBase<NumberPipelineExecutionContext>();
 process.Add(inputInstruction);
 var multiply = process.Append(inputInstruction,
     source => new UserInputMultiplyInstruction(source));
 var factor = process.Append(multiply, source => new FactorInstruction(source));
 process.Append(factor, source => new MinMaxDifferenceInstruction(source));
+
+InputScripts.OutputExistingProcess(process);
+while (InputScripts.PromptUserForAction() == ConfigurePipelineUserAction.Edit)
+{
+    InputScripts.OutputExistingProcess(process);    
+}
 
 using var cancellation = new CancellationTokenSource();
 ConsoleCancelEventHandler cancelHandler = (_, args) =>
@@ -52,3 +39,4 @@ finally
 {
     Console.CancelKeyPress -= cancelHandler;
 }
+

@@ -8,10 +8,13 @@ public class UserInterfaceProvider
     public int PromptUserForIntInput(string message)
     {
         Console.WriteLine(message);
-        if (int.TryParse(Console.ReadLine(), out var input))
-            return input;
-
-        throw new InvalidDataException("Could not convert input to integer.");
+        
+        int intInput;
+        while (!int.TryParse(Console.ReadLine(), out intInput))
+        {
+            Console.WriteLine("Input must be an integer.");
+        }
+        return intInput;
     }
 
     public void InformUser(string message) => Console.WriteLine(message);
