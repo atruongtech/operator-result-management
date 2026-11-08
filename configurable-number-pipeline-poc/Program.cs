@@ -1,6 +1,15 @@
+using System.Collections.Immutable;
 using configurable_number_pipeline_poc;
 using operator_result_management;
+using operator_result_management.Basic;
 
+ImmutableList<IInstructionFactory> factories = 
+[
+    new DirectInputInstructionFactory(),
+    new MinMaxDifferenceInstructionFactory(),
+    new UserInputMultiplyInstructionFactory(),
+    new FactorInstructionFactory(),
+];
 var inputInstruction = new DirectInputInstruction();
 var process = new ProcessBase<NumberPipelineExecutionContext>();
 process.Add(inputInstruction);
@@ -12,7 +21,13 @@ process.Append(factor, source => new MinMaxDifferenceInstruction(source));
 InputScripts.OutputExistingProcess(process);
 while (InputScripts.PromptUserForAction() == ConfigurePipelineUserAction.Edit)
 {
-    InputScripts.OutputExistingProcess(process);    
+    var inputs = InputScripts.GetInstructionSelection(process);
+    var bindings = factories.Select(f => f.BindInputs(inputs)).OfType<ReadyResponse>().ToList();
+    var userCreated = InputScripts.SelectBinding([..bindings]).ToList();
+    if (userCreated.Count == 0)
+        continue;
+    process.Add((IInstruction<NumberPipelineExecutionContext>)userCreated.Single());
+    InputScripts.OutputExistingProcess(process);
 }
 
 using var cancellation = new CancellationTokenSource();
