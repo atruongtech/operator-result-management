@@ -68,7 +68,7 @@ public class InputScripts
         return input;
     }
 
-    public static IEnumerable<IInstruction> SelectBinding(ImmutableList<BindingResponse> responses)
+    public static IEnumerable<IInstruction> SelectBinding(ImmutableList<BindingResponse> responses, IProcess process)
     {
         var readyResponses = responses.OfType<ReadyResponse>().ToList();
         if (readyResponses.Count == 0)
@@ -77,18 +77,25 @@ public class InputScripts
             return [];
         }
 
+        var instructions = process.Instructions;
+        var instructionNumbers = new Dictionary<IInstruction, int>(ReferenceEqualityComparer.Instance);
+        for (var i = 0; i < instructions.Count; i++)
+        {
+            instructionNumbers.Add(instructions[i], i + 1);
+        }
+
         Console.WriteLine("Eligible instructions for creation:");
         for (var i = 0; i < readyResponses.Count; i++)
         {
             Console.WriteLine($"{i+1}) {readyResponses[i].BoundInstructionType.Name}");
             foreach(var factoryBinding in readyResponses[i].Bindings)
             {
-                Console.WriteLine($"{factoryBinding.ParameterName}: {factoryBinding.BoundInstruction.GetType().Name}");
+                Console.WriteLine($"{factoryBinding.ParameterName}: {instructionNumbers[factoryBinding.BoundInstruction]}) {factoryBinding.BoundInstruction.GetType().Name}");
             }
         }
         
         Console.WriteLine();
-        var input = GetValidIntInput("Select instruction to create:", [..Enumerable.Range(1, readyResponses.Count + 1)]);
+        var input = GetValidIntInput("Select instruction to create:", [..Enumerable.Range(1, readyResponses.Count)]);
         return [readyResponses[input - 1].Create()];
     }
 }
