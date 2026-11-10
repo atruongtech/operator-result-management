@@ -4,13 +4,13 @@ using operator_result_management.Basic;
 
 namespace configurable_number_pipeline_poc;
 
-public class DirectInputInstructionFactory : IInstructionFactory
+public class DirectInputInstructionFactory : IInstructionFactory<NumberPipelineExecutionContext>
 {
-    public BindingResponse BindInputs(IReadOnlyList<IInstruction> inputs)
+    public BindingResponse<NumberPipelineExecutionContext> BindInputs(IReadOnlyList<IInstruction> inputs)
     {
         if (inputs.Count != 0)
-            return new FailedResponse("Direct input instruction takes no inputs.", typeof(DirectInputInstruction));
+            return new FailedResponse<NumberPipelineExecutionContext>("Direct input instruction takes no inputs.", typeof(DirectInputInstruction));
 
-        return new ReadyResponse([], () => new DirectInputInstruction(), typeof(DirectInputInstruction));
+        return new ReadyResponse<NumberPipelineExecutionContext>([], () => new DirectInputInstruction(), typeof(DirectInputInstruction));
     }
 }

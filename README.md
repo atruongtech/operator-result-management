@@ -114,6 +114,23 @@ Multiple instructions may register the same operation; the context executes that
 
 The mapping retains instruction objects while the context or a returned mapping snapshot remains reachable. For durable historical records beyond those objects' lifetimes, clients can capture instruction metadata/configuration at registration or retain immutable definition revisions. An instruction ID alone neither snapshots configuration nor uniquely identifies an execution. Run IDs, operation IDs, definition revisions, and persistent provenance records are client concerns, not built-in features.
 
+## Context-typed instruction factories
+
+`IInstructionFactory<TContext>` binds candidate inputs and returns a
+`BindingResponse<TContext>`. A successful `ReadyResponse<TContext>` exposes a
+`Create` delegate returning `IInstruction<TContext>`, so callers can add the
+constructed instruction directly to `IProcess<TContext>` without casting.
+`FailedResponse<TContext>` reports why the inputs cannot be bound.
+
+Inputs remain `IReadOnlyList<IInstruction>` because factories validate their
+required input count, result types, and context compatibility at binding time.
+`InstructionFactoryBinding` retains untyped instruction references for display.
+The factory registry and selection helper must preserve `TContext` through to
+creation; different result types can share the same context-typed registry.
+
+Consumers must
+specify the execution context type when implementing factories or handling responses.
+
 ## Repository example
 
 The [configurable number pipeline](configurable-number-pipeline-poc/Program.cs) demonstrates a derived execution context supplying user-interface services, typed process composition, and cancellation.

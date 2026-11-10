@@ -3,7 +3,7 @@ using configurable_number_pipeline_poc;
 using operator_result_management;
 using operator_result_management.Basic;
 
-ImmutableList<IInstructionFactory> factories = 
+ImmutableList<IInstructionFactory<NumberPipelineExecutionContext>> factories =
 [
     new DirectInputInstructionFactory(),
     new MinMaxDifferenceInstructionFactory(),
@@ -24,11 +24,11 @@ while(true)
     while (InputScripts.PromptUserForAction() == ConfigurePipelineUserAction.Edit)
     {
         var inputs = InputScripts.GetInstructionSelection(process);
-        var bindings = factories.Select(f => f.BindInputs(inputs)).OfType<ReadyResponse>().ToList();
-        var userCreated = InputScripts.SelectBinding([..bindings], process).ToList();
+        var bindings = factories.Select(f => f.BindInputs(inputs)).ToImmutableList();
+        var userCreated = InputScripts.SelectBinding(bindings, process).ToList();
         if (userCreated.Count == 0)
             continue;
-        process.Add((IInstruction<NumberPipelineExecutionContext>)userCreated.Single());
+        process.Add(userCreated.Single());
         InputScripts.OutputExistingProcess(process);
     }
 

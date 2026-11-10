@@ -8,26 +8,25 @@ public class InstructionFactoryBinding(string ParameterName, IInstruction BoundI
     public IInstruction BoundInstruction { get; } = BoundInstruction;
 }
 
-public abstract class BindingResponse(Type boundInstructionType)
+public abstract class BindingResponse<TContext>(Type boundInstructionType)
+    where TContext : IExecutionContext
 {
     public Type BoundInstructionType { get; } = boundInstructionType;
 }
 
-public class ReadyResponse(
+public class ReadyResponse<TContext>(
     ImmutableList<InstructionFactoryBinding> bindings,
-    Func<IInstruction> create,
-    Type boundInstructionType) : BindingResponse(boundInstructionType)
+    Func<IInstruction<TContext>> create,
+    Type boundInstructionType) : BindingResponse<TContext>(boundInstructionType)
+    where TContext : IExecutionContext
 {
     public ImmutableList<InstructionFactoryBinding> Bindings { get; } = bindings;
-    public Func<IInstruction> Create { get; } = create;
+    public Func<IInstruction<TContext>> Create { get; } = create;
 }
 
-public class FailedResponse(string Reason, Type boundInstructionType) : BindingResponse(boundInstructionType)
+public class FailedResponse<TContext>(string Reason, Type boundInstructionType)
+    : BindingResponse<TContext>(boundInstructionType)
+    where TContext : IExecutionContext
 {
     public string Reason { get; } = Reason;
-}
-
-public interface IInstructionFactory
-{
-    BindingResponse BindInputs(IReadOnlyList<IInstruction> inputs);
 }

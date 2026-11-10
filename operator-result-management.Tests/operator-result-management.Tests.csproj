@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\operator-result-management\operator-result-management.csproj" />
+    <ProjectReference Include="..\configurable-number-pipeline-poc\configurable-number-pipeline-poc.csproj" />
   </ItemGroup>
 
 </Project>

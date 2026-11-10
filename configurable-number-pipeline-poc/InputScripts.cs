@@ -68,9 +68,11 @@ public class InputScripts
         return input;
     }
 
-    public static IEnumerable<IInstruction> SelectBinding(ImmutableList<BindingResponse> responses, IProcess process)
+    public static IEnumerable<IInstruction<TContext>> SelectBinding<TContext>(
+        ImmutableList<BindingResponse<TContext>> responses, IProcess process)
+        where TContext : IExecutionContext
     {
-        var readyResponses = responses.OfType<ReadyResponse>().ToList();
+        var readyResponses = responses.OfType<ReadyResponse<TContext>>().ToList();
         if (readyResponses.Count == 0)
         {
             Console.WriteLine("No valid instructions for selection.");
