@@ -9,6 +9,7 @@ ImmutableList<IInstructionFactory<NumberPipelineExecutionContext>> factories =
     new MinMaxDifferenceInstructionFactory(),
     new UserInputMultiplyInstructionFactory(),
     new FactorInstructionFactory(),
+    new DistributeInstructionFactory(),
 ];
 var inputInstruction = new DirectInputInstruction();
 var process = new ProcessBase<NumberPipelineExecutionContext>();

@@ -12,6 +12,7 @@ public class InstructionFactoryTests
     [InlineData(1, typeof(FactorInstruction))]
     [InlineData(2, typeof(MinMaxDifferenceInstruction))]
     [InlineData(3, typeof(UserInputMultiplyInstruction))]
+    [InlineData(4, typeof(DistributeInstruction))]
     public void ReadyResponsesCreateContextTypedInstructionsWithBoundDependencies(
         int factoryIndex, Type instructionType)
     {
@@ -20,6 +21,7 @@ public class InstructionFactoryTests
         {
             0 => [],
             2 => [new FactorInstruction(input)],
+            4 => [input, new FactorInstruction(input)],
             _ => [input]
         };
         IInstructionFactory<NumberPipelineExecutionContext> factory = GetFactory(factoryIndex);
@@ -37,7 +39,8 @@ public class InstructionFactoryTests
         Assert.Equal(inputs.Count, ready.Bindings.Count);
         for (var i = 0; i < inputs.Count; i++)
         {
-            Assert.Equal("input", ready.Bindings[i].ParameterName);
+            Assert.Equal(factoryIndex == 4 ? (i == 0 ? "value" : "values") : "input",
+                ready.Bindings[i].ParameterName);
             Assert.Same(inputs[i], ready.Bindings[i].BoundInstruction);
         }
     }
@@ -47,6 +50,7 @@ public class InstructionFactoryTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public void FactoriesRejectIncorrectInputCounts(int factoryIndex)
     {
         IReadOnlyList<IInstruction> inputs = factoryIndex == 0
@@ -97,6 +101,7 @@ public class InstructionFactoryTests
             1 => new FactorInstructionFactory(),
             2 => new MinMaxDifferenceInstructionFactory(),
             3 => new UserInputMultiplyInstructionFactory(),
+            4 => new DistributeInstructionFactory(),
             _ => throw new ArgumentOutOfRangeException(nameof(index))
         };
 
