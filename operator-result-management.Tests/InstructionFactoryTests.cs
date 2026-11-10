@@ -39,7 +39,7 @@ public class InstructionFactoryTests
         Assert.Equal(inputs.Count, ready.Bindings.Count);
         for (var i = 0; i < inputs.Count; i++)
         {
-            Assert.Equal(factoryIndex == 4 ? (i == 0 ? "value" : "values") : "input",
+            Assert.Equal(factoryIndex == 4 ? (i == 0 ? "toDistribute" : "distributeAmong") : "input",
                 ready.Bindings[i].ParameterName);
             Assert.Same(inputs[i], ready.Bindings[i].BoundInstruction);
         }

@@ -9,8 +9,9 @@ namespace operator_result_management
     public interface IExecutionContext
     {
         /// <summary>
-        /// Returns a read-only snapshot of registered executable operations,
+        /// Returns a read-only snapshot of locally owned registered executable operations,
         /// keyed by instruction reference identity.
+        /// Conditional body contexts exclude imported outer operations from this mapping.
         /// Only the registry entries are copied. Keys and values are the original
         /// instruction and operation objects, not deep-copy snapshots. Mutable instruction
         /// keys expose their current state, not necessarily the state used by this run.
@@ -34,12 +35,16 @@ namespace operator_result_management
         /// later instruction edits cannot affect the registered operation. This method
         /// does not snapshot instruction state or refresh an existing registration.
         /// New registrations are rejected after execution starts; existing lookups remain valid.
+        /// Conditional body scopes freeze registration when prepared. Declared imported
+        /// instructions resolve to outer operations without adding local ownership.
+        /// References to instructions owned by another scope require an explicit import.
         /// </summary>
         TOperation GetOrAddOperation<TOperation>(IInstruction instruction, Func<TOperation> factory)
             where TOperation : class, IOperationInstance;
 
         /// <summary>
-        /// Freezes the completed graph, starts all registered operations, and awaits them all.
+        /// Freezes the completed graph, starts all locally owned registered operations,
+        /// and awaits them all. A conditional operation activates its owned body separately.
         /// Repeated calls return the same task, including after failure or cancellation.
         /// Register the complete process or a run's selected instructions before calling
         /// this method; individual registration discovers upstream dependencies, not downstream consumers.

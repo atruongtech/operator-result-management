@@ -13,12 +13,18 @@ public class OperationInstanceBaseTests
         var completion = NewCompletionSource<IOperationResult<int>>();
         var operation = new TestOperation(() => completion.Task);
         var promise = operation.Promise();
+        IOperationInstance untyped = operation;
+        var observedCompletion = untyped.Completion;
 
         Assert.Same(promise, operation.Promise());
+        Assert.Same(promise, observedCompletion);
+        Assert.Same(observedCompletion, untyped.Completion);
+        Assert.False(observedCompletion.IsCompleted);
         Assert.False(promise.IsCompleted);
         Assert.Equal(0, operation.InvocationCount);
 
         var execution = operation.Execute();
+        Assert.Same(observedCompletion, execution);
         Assert.False(execution.IsCompleted);
         Assert.False(promise.IsCompleted);
         Assert.Same(promise, operation.Promise());
@@ -30,6 +36,7 @@ public class OperationInstanceBaseTests
         await execution.WaitAsync(_timeout);
         Assert.Same(result, await promise.WaitAsync(_timeout));
         Assert.Same(execution, operation.Execute());
+        Assert.Same(observedCompletion, untyped.Completion);
         Assert.Equal(1, operation.InvocationCount);
     }
 
@@ -50,7 +57,7 @@ public class OperationInstanceBaseTests
         await Task.WhenAll(callers).WaitAsync(_timeout);
 
         Assert.Equal(1, operation.InvocationCount);
-        Assert.All(returnedTasks, task => Assert.Same(returnedTasks[0], task));
+        Assert.All(returnedTasks, task => Assert.Same(operation.Completion, task));
         Assert.False(operation.Promise().IsCompleted);
 
         completion.SetResult(new ImmediateResult<int>(42));
@@ -65,10 +72,12 @@ public class OperationInstanceBaseTests
         var error = new InvalidOperationException("Synchronous failure.");
         var operation = new TestOperation(() => throw error);
         var promise = operation.Promise();
+        var observedCompletion = operation.Completion;
         Task? execution = null;
 
         Assert.Null(Record.Exception(() => { execution = operation.Execute(); }));
         Assert.NotNull(execution);
+        Assert.Same(observedCompletion, execution);
         Assert.Same(error, await Assert.ThrowsAsync<InvalidOperationException>(
             () => execution.WaitAsync(_timeout)));
         Assert.Same(error, await Assert.ThrowsAsync<InvalidOperationException>(
@@ -85,7 +94,9 @@ public class OperationInstanceBaseTests
         var completion = NewCompletionSource<IOperationResult<int>>();
         var operation = new TestOperation(() => completion.Task);
         var promise = operation.Promise();
+        var observedCompletion = operation.Completion;
         var execution = operation.Execute();
+        Assert.Same(observedCompletion, execution);
         var error = new InvalidDataException("Asynchronous failure.");
 
         completion.SetException(error);
@@ -136,7 +147,9 @@ public class OperationInstanceBaseTests
             ? throw new OperationCanceledException(cancellation.Token)
             : completion.Task);
         var promise = operation.Promise();
+        var observedCompletion = operation.Completion;
         var execution = operation.Execute();
+        Assert.Same(observedCompletion, execution);
 
         if (!synchronous)
             completion.SetCanceled(cancellation.Token);
@@ -158,7 +171,9 @@ public class OperationInstanceBaseTests
     public async Task NullResultFaultsBothTasks()
     {
         var operation = new TestOperation(() => Task.FromResult<IOperationResult<int>>(null!));
+        var observedCompletion = operation.Completion;
         var execution = operation.Execute();
+        Assert.Same(observedCompletion, execution);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => execution.WaitAsync(_timeout));
@@ -208,6 +223,28 @@ public class OperationInstanceBaseTests
         Assert.Same(execution, downstream.Execute());
         Assert.Equal(1, upstream.InvocationCount);
         Assert.Equal(1, downstream.InvocationCount);
+    }
+
+    [Fact]
+    public async Task UntypedDependencyCanObserveTypedCompletionWithoutStartingUpstream()
+    {
+        var upstream = new TestOperation(() =>
+            Task.FromResult<IOperationResult<int>>(new ImmediateResult<int>(42)));
+        IOperationInstance dependency = upstream;
+        var downstream = new TestOperation(async () =>
+        {
+            await dependency.Completion;
+            return new ImmediateResult<int>(7);
+        });
+
+        var execution = downstream.Execute();
+
+        Assert.False(execution.IsCompleted);
+        Assert.Equal(0, upstream.InvocationCount);
+        Assert.Same(dependency.Completion, dependency.Execute());
+        await execution.WaitAsync(_timeout);
+        Assert.Equal(7, (await downstream.Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Equal(42, (await upstream.Promise().WaitAsync(_timeout)).GetResult());
     }
 
     private static TaskCompletionSource<T> NewCompletionSource<T>()

@@ -21,9 +21,11 @@ Instructions can be immutable or mutable. The context preserves instruction-to-o
 | `IExecutionContext` / `ExecutionContextBase` | One run's operation registry, shared cancellation token, and execution lifecycle. A derived context can supply run-specific services. | A historical snapshot of instruction configuration. |
 | `IOperationInstance<TResult>` / `OperationInstanceBase<TResult>` | The run-specific work, captured configuration, upstream operation references, and eventual result. | A reusable process definition. |
 | `IOperationResult<TResult>` / `ImmediateResult<TResult>` | The published value of a successful operation, accessed through `GetResult()`. | The instruction or the execution lifecycle. |
+| `ConditionalInstruction<TContext>` | A ready-to-use condition and a separately registered, owned subprocess body. | A value selector or permission to expose body-local operations. |
+| `IOperationInstance` / non-generic `OperationInstanceBase` | Execute-once work with an observation-only `Completion` task. | A typed result value. |
 | `ProcessRunRequest<TContext>` | A fixed selection of instruction references to register, either the whole process or a subset. | A deep snapshot of definitions or a guarantee of identical results when replayed. |
 
-Most types use the `operator_result_management` namespace. `OperationInstanceBase<TResult>` and `ImmediateResult<TResult>` use `operator_result_management.Basic`.
+Most types use the `operator_result_management` namespace. Both forms of `OperationInstanceBase` and `ImmediateResult<TResult>` use `operator_result_management.Basic`.
 
 ### Process: membership, not scheduling
 
@@ -51,13 +53,17 @@ Registration constructs the graph; it must not start or wait for execution. Oper
 
 ### Operation: work and its eventual result
 
-`Execute()` starts an operation. With `OperationInstanceBase<TResult>`, execution happens once per instance, and every call returns the same task. A failure or cancellation is not retried.
+Every `IOperationInstance` exposes `Completion` to observe success, failure, or cancellation **without starting execution**, regardless of its result type. `Execute()` starts an operation and returns that exact task: `ReferenceEquals(operation.Completion, operation.Execute())` is always true. With either `OperationInstanceBase`, execution happens once per instance. A failure or cancellation is not retried.
 
 `Promise()` observes the eventual result **without starting execution**. Dependent operations await upstream promises instead of running separate copies of upstream work.
+
+Typed `OperationInstanceBase<TResult>` uses its result promise as the shared completion and execution task; `Promise()` retains typed value access. Dependencies that need only completion can await `Completion` through `IOperationInstance`, without casts.
 
 The base class publishes a result only after `ExecuteCoreAsync` succeeds. Execution failures and cancellation propagate through both `Execute()` and `Promise()`. Returning a null result is an execution failure.
 
 All consumers receive the same published result. Prefer immutable result values; coordinate access if sharing mutable values. `ImmediateResult<T>` wraps a value without deep-copying it.
+
+**Breaking interface change:** `ICompletionOperationInstance` has been removed. Custom `IOperationInstance` implementations must expose an observation-only `Completion` task and return that same task from `Execute()`.
 
 ## Define and run a process
 
@@ -76,6 +82,87 @@ Calling an individual operation's `Execute()` starts only that operation, not th
 Create a `ProcessRunRequest<TContext>` with the process and the desired instruction selection, then register it in a fresh context. A selection registers its selected instructions and their transitive upstream dependencies, not downstream consumers or unrelated process members. Selected instructions need not be graph sinks. An empty selection registers no work.
 
 Use a fresh context for a partial run: context execution also starts anything else already registered there. A request fixes selected references, not their configuration or dependencies. Replaying it in a fresh context uses their state at registration time.
+
+## Conditional subprocesses
+
+`ConditionalInstruction<TContext>` defines a completion-only conditional instruction
+with an owned `IProcess<TContext>` body. `TContext` must derive from `ExecutionContextBase`.
+Use it directly by supplying a factory that creates a fresh body context with the parent's
+cancellation token and the services required by the body:
+
+```csharp
+var conditional = new ConditionalInstruction<ExecutionContextBase>(
+    condition,
+    body,
+    bodyContextFactory: parent => new ExecutionContextBase(parent.CancellationToken));
+```
+
+For a custom context, the factory can also pass run-specific services from the parent.
+The class is unsealed; consumers can derive from it and override the protected virtual
+`CreateBodyContext` hook when needed. Its default implementation calls the required
+constructor-supplied factory.
+
+Add the conditional to the parent process, not its body instructions. Its parent
+dependencies are the Boolean condition and explicitly declared outer inputs.
+Body membership is separate: `ProcessBase.Add` does not flatten it into the parent.
+
+Parent registration constructs the entire body, including nested conditional bodies,
+and freezes each body's registry before execution. Instruction implementations must
+capture configuration and upstream operations as usual. Later edits to body membership,
+configuration, or dependencies apply only to fresh runs. Registration errors are still
+reported for a body whose condition would be false.
+
+At execution, the conditional awaits its condition. A false result completes successfully
+without starting the body. A true result executes the child context and completes only
+after all its owned operations finish. Body failure or cancellation propagates through
+the conditional to the parent run. Independent parent operations remain concurrent;
+this is not a sequential statement scheduler.
+
+### Inputs and scope boundaries
+
+- Pass outer instructions through `outerInputs`. The condition and the transitive
+  dependencies of all declared inputs are also available as imports. Body instructions
+  use their normal `GetTypedOperation(context)` calls; imported lookups return the
+  existing outer operation, not a second copy.
+- Imports are not child-owned operations and are excluded from the child's `Operations`
+  mapping and execution list. They execute in their owning outer scope even if the body
+  is not taken. Put work inside the body if it should execute only when the condition is true.
+- Body-local instructions cannot also be registered in a parent or sibling scope.
+  Cross-scope references without an explicit outer-input binding are rejected during
+  registration, regardless of registration order. Reuse an outer input to share work;
+  use distinct instruction instances for separate body-local steps.
+- Nested bodies obey the same rules. Recursive containment and dependencies crossing
+  back into an enclosing conditional are rejected. Scope checks occur at registration;
+  process dependency validation alone does not traverse body containment.
+
+The body-context factory (or overridden `CreateBodyContext`) must return a fresh, unused
+context exclusively owned by the body. The factory runs during registration, even when
+the condition will be false, and is not called again for existing operation lookups.
+Do not register work in that factory or expose the child context to consumers: the
+class handles registration, imported lookups, freezing, and execution.
+
+### Completion without a value
+
+`conditional.GetOperation(context)` returns `IOperationInstance`, not a typed
+result operation. Its `Completion` task observes success, failure, or cancellation without
+starting execution. Start the owning parent context as usual:
+
+```csharp
+var operation = conditional.GetOperation(context);
+await context.ExecuteAsync();
+await operation.Completion;
+```
+
+A downstream instruction can declare the conditional as a dependency, capture its
+operation during registration, and await `operation.Completion.WaitAsync(cancellationToken)`
+inside its own execution. Declaring a dependency alone does not impose ordering.
+No body results or executable operation references are exported.
+
+The non-generic `operator_result_management.Basic.OperationInstanceBase` supports other
+completion-only operations with the same execute-once and cancellation semantics.
+Unstarted body operations retain pending promises, but remain private and are never
+awaited by the parent run. A false conditional is successful, not failed or canceled.
+The number-pipeline POC does not yet expose conditional creation.
 
 ## Mutable or immutable instructions
 

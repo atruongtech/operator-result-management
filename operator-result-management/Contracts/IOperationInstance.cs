@@ -4,11 +4,18 @@ namespace operator_result_management
     public interface IOperationInstance
     {
         /// <summary>
-        /// Starts the operation. Implementations based on
-        /// <see cref="Basic.OperationInstanceBase{T}"/> execute once per instance and
-        /// return the same task on every call, without retrying failures or cancellation.
-        /// Execution errors are reported through both this task and the result promise.
-        /// Cancellation uses the owning context's token and cancels both tasks cooperatively.
+        /// Observes success, failure, or cancellation without starting execution.
+        /// Remains pending until the operation executes. Returns the same task as
+        /// <see cref="Execute"/> before, during, and after execution.
+        /// </summary>
+        Task Completion { get; }
+
+        /// <summary>
+        /// Starts the operation and returns <see cref="Completion"/>.
+        /// Implementations based on either OperationInstanceBase execute once per instance,
+        /// without retrying failures or cancellation. Execution errors and cooperative
+        /// cancellation are published through this shared task and any typed result promise.
+        /// Cancellation uses the owning context's token.
         /// </summary>
         Task Execute();
     }

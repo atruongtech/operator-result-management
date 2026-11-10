@@ -14,11 +14,20 @@ namespace operator_result_management.Basic
             ArgumentNullException.ThrowIfNull(context);
             _cancellationToken = context.CancellationToken;
             _taskCompletionSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            _execution = new(ExecuteOnceAsync, LazyThreadSafetyMode.ExecutionAndPublication);
+            _execution = new(() =>
+            {
+                _ = ExecuteOnceAsync();
+                return Completion;
+            }, LazyThreadSafetyMode.ExecutionAndPublication);
         }
 
         /// <summary>
-        /// Starts execution once. Every caller receives the same task, including after
+        /// Observes completion without starting execution. Shares the typed result promise.
+        /// </summary>
+        public Task Completion => _taskCompletionSource.Task;
+
+        /// <summary>
+        /// Starts execution once. Every caller receives Completion, including after
         /// failure or cancellation; subsequent calls do not retry execution.
         /// Uses the owning context's token for cooperative cancellation.
         /// </summary>
@@ -52,12 +61,10 @@ namespace operator_result_management.Basic
             catch (OperationCanceledException exception)
             {
                 _taskCompletionSource.SetCanceled(exception.CancellationToken);
-                throw;
             }
             catch (Exception exception)
             {
                 _taskCompletionSource.SetException(exception);
-                throw;
             }
         }
     }

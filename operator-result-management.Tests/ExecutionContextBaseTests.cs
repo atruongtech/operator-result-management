@@ -541,6 +541,7 @@ public class ExecutionContextTests
             () => operation.Promise().WaitAsync(_timeout));
         Assert.Equal(token, error.CancellationToken);
         Assert.True(operation.Promise().IsCanceled);
+        Assert.Same(operation.Completion, operation.Execute());
         Assert.True(operation.Execute().IsCanceled);
     }
 
@@ -604,6 +605,9 @@ public class ExecutionContextTests
 
     private sealed class ThrowingOperation(Exception error) : IOperationInstance
     {
+        public Task Completion { get; } =
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+
         public int InvocationCount { get; private set; }
 
         public Task Execute()
@@ -615,12 +619,18 @@ public class ExecutionContextTests
 
     private sealed class CountingOperation : IOperationInstance
     {
+        private readonly TaskCompletionSource _completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Completion => _completion.Task;
+
         public int InvocationCount { get; private set; }
 
         public Task Execute()
         {
             InvocationCount++;
-            return Task.CompletedTask;
+            _completion.TrySetResult();
+            return Completion;
         }
     }
 }
