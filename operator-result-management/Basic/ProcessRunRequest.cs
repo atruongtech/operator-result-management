@@ -8,20 +8,20 @@ namespace operator_result_management
     /// Selected instructions need not be graph sinks. Their upstream dependencies are
     /// discovered during registration, not stored as selection state on the process.
     /// </summary>
-    public sealed class ProcessRunRequest<TContext> where TContext : IExecutionContext
+    public sealed class ProcessRunRequest<TContext> where TContext : ExecutionContextBase
     {
         /// <summary>
         /// Distinct explicitly selected instructions in selection order. The executable
         /// graph also includes their transitive dependencies; inspect context.Operations
         /// after registration for that graph. An empty selection registers no work.
         /// </summary>
-        public IReadOnlyList<IInstruction<TContext>> SelectedInstructions { get; }
+        public IReadOnlyList<InstructionBase<TContext>> SelectedInstructions { get; }
 
         /// <summary>
         /// Captures references to every instruction currently in the process.
         /// Later additions do not change this request. Instruction state is not snapshotted.
         /// </summary>
-        public ProcessRunRequest(IProcess<TContext> process)
+        public ProcessRunRequest(ProcessBase<TContext> process)
         {
             ArgumentNullException.ThrowIfNull(process);
             SelectedInstructions = Array.AsReadOnly(process.Instructions.ToArray());
@@ -33,14 +33,14 @@ namespace operator_result_management
         /// duplicate references are selected once, regardless of Id or overridden equality.
         /// </summary>
         public ProcessRunRequest(
-            IProcess<TContext> process,
-            IEnumerable<IInstruction<TContext>> selectedInstructions)
+            ProcessBase<TContext> process,
+            IEnumerable<InstructionBase<TContext>> selectedInstructions)
         {
             ArgumentNullException.ThrowIfNull(process);
             ArgumentNullException.ThrowIfNull(selectedInstructions);
-            var members = new HashSet<IInstruction>(process.Instructions, ReferenceEqualityComparer.Instance);
-            var selected = new HashSet<IInstruction>(ReferenceEqualityComparer.Instance);
-            var instructions = new List<IInstruction<TContext>>();
+            var members = new HashSet<InstructionBase>(process.Instructions, ReferenceEqualityComparer.Instance);
+            var selected = new HashSet<InstructionBase>(ReferenceEqualityComparer.Instance);
+            var instructions = new List<InstructionBase<TContext>>();
             foreach (var instruction in selectedInstructions)
             {
                 if (instruction is null)

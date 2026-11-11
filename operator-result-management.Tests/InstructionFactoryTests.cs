@@ -17,7 +17,7 @@ public class InstructionFactoryTests
         int factoryIndex, Type instructionType)
     {
         var input = new DirectInputInstruction();
-        IReadOnlyList<IInstruction> inputs = factoryIndex switch
+        IReadOnlyList<InstructionBase> inputs = factoryIndex switch
         {
             0 => [],
             2 => [new FactorInstruction(input)],
@@ -28,7 +28,7 @@ public class InstructionFactoryTests
 
         var ready = Assert.IsType<ReadyResponse<NumberPipelineExecutionContext>>(
             factory.BindInputs(inputs));
-        IInstruction<NumberPipelineExecutionContext> instruction = ready.Create();
+        InstructionBase<NumberPipelineExecutionContext> instruction = ready.Create();
         var process = new ProcessBase<NumberPipelineExecutionContext>();
         process.Add(instruction);
 
@@ -53,7 +53,7 @@ public class InstructionFactoryTests
     [InlineData(4)]
     public void FactoriesRejectIncorrectInputCounts(int factoryIndex)
     {
-        IReadOnlyList<IInstruction> inputs = factoryIndex == 0
+        IReadOnlyList<InstructionBase> inputs = factoryIndex == 0
             ? [new DirectInputInstruction()]
             : [];
 
@@ -70,7 +70,7 @@ public class InstructionFactoryTests
     public void FactoriesRejectIncorrectInputResultTypes(int factoryIndex)
     {
         var input = new DirectInputInstruction();
-        IInstruction wrongResult = factoryIndex == 2 ? input : new FactorInstruction(input);
+        InstructionBase wrongResult = factoryIndex == 2 ? input : new FactorInstruction(input);
 
         var failed = Assert.IsType<FailedResponse<NumberPipelineExecutionContext>>(
             GetFactory(factoryIndex).BindInputs([wrongResult]));
@@ -84,7 +84,7 @@ public class InstructionFactoryTests
     [InlineData(3)]
     public void FactoriesRejectInputsForAnotherContext(int factoryIndex)
     {
-        IInstruction wrongContext = factoryIndex == 2
+        InstructionBase wrongContext = factoryIndex == 2
             ? new OtherContextInstruction<ImmutableList<int>>()
             : new OtherContextInstruction<int>();
 
@@ -107,15 +107,10 @@ public class InstructionFactoryTests
 
     private sealed class OtherContext : ExecutionContextBase;
 
-    private sealed class OtherContextInstruction<TResult> : IInstruction<TResult, OtherContext>
+    private sealed class OtherContextInstruction<TResult> : InstructionBase<TResult, OtherContext>
     {
-        public Guid Id { get; } = Guid.NewGuid();
-        public IReadOnlyList<IInstruction> Dependencies => [];
-
-        public IOperationInstance GetOperation(OtherContext context) =>
-            throw new NotSupportedException("This instruction is only used for binding.");
-
-        public IOperationInstance<TResult> GetTypedOperation(OtherContext context) =>
+        protected override OperationInstanceBase<TResult> CreateOperation(
+            OtherContext context, InstructionInputs<OtherContext> inputs) =>
             throw new NotSupportedException("This instruction is only used for binding.");
     }
 }

@@ -3,68 +3,72 @@ namespace operator_result_management.Basic
     /// <summary>
     /// Executes once per instance and publishes a result only after successful execution.
     /// </summary>
-    public abstract class OperationInstanceBase<TResult> : IOperationInstance<TResult>
+    public abstract class OperationInstanceBase<TResult> : OperationInstanceBase
     {
-        private readonly TaskCompletionSource<IOperationResult<TResult>> _taskCompletionSource;
-        private readonly Lazy<Task> _execution;
-        private readonly CancellationToken _cancellationToken;
+        private readonly ResultCompletionState _completion;
 
-        protected OperationInstanceBase(IExecutionContext context)
+        protected OperationInstanceBase(ExecutionContextBase context)
+            : this(context, new ResultCompletionState())
         {
-            ArgumentNullException.ThrowIfNull(context);
-            _cancellationToken = context.CancellationToken;
-            _taskCompletionSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            _execution = new(() =>
-            {
-                _ = ExecuteOnceAsync();
-                return Completion;
-            }, LazyThreadSafetyMode.ExecutionAndPublication);
+        }
+
+        private OperationInstanceBase(ExecutionContextBase context, ResultCompletionState completion)
+            : base(context, completion)
+        {
+            _completion = completion;
         }
 
         /// <summary>
-        /// Observes completion without starting execution. Shares the typed result promise.
-        /// </summary>
-        public Task Completion => _taskCompletionSource.Task;
-
-        /// <summary>
-        /// Starts execution once. Every caller receives Completion, including after
-        /// failure or cancellation; subsequent calls do not retry execution.
-        /// Uses the owning context's token for cooperative cancellation.
-        /// </summary>
-        public Task Execute() => _execution.Value;
-
-        /// <summary>
         /// Observes the result without starting execution. Faults or cancels when execution
-        /// faults or cancels. An operation that is never executed leaves its promise pending.
+        /// faults or cancels. Shares the exact task used by Completion and Execute().
+        /// An operation that is never executed leaves its promise pending.
+        /// All consumers share the published result; prefer immutable values or coordinate access.
         /// </summary>
-        public Task<IOperationResult<TResult>> Promise() => _taskCompletionSource.Task;
+        public Task<IOperationResult<TResult>> Promise() => _completion.Promise;
 
         /// <summary>
         /// Produces the result. Called once on first execution, never from the constructor.
-        /// Returning null is an execution failure. Observe the context's cancellation token
-        /// in asynchronous waits and long-running work.
+        /// Returning a null task or result wrapper is an execution failure; a wrapper may
+        /// contain a null value. Observe cancellation in asynchronous waits and long-running work.
+        /// Capture configuration and upstream operations before execution. Do not await this
+        /// operation's own completion or promise.
         /// </summary>
-        protected abstract Task<IOperationResult<TResult>> ExecuteCoreAsync(CancellationToken cancellationToken);
+        protected abstract Task<IOperationResult<TResult>> ExecuteResultAsync(CancellationToken cancellationToken);
 
-        private async Task ExecuteOnceAsync()
+        protected sealed override async Task ExecuteCoreAsync(CancellationToken cancellationToken)
         {
-            try
-            {
-                _cancellationToken.ThrowIfCancellationRequested();
-                var result = await ExecuteCoreAsync(_cancellationToken).ConfigureAwait(false);
-                _cancellationToken.ThrowIfCancellationRequested();
-                if (result is null)
-                    throw new InvalidOperationException("Operation execution returned a null result.");
+            var execution = ExecuteResultAsync(cancellationToken)
+                ?? throw new InvalidOperationException("Operation execution returned a null task.");
+            _completion.Result = await execution.ConfigureAwait(false);
+        }
 
-                _taskCompletionSource.SetResult(result);
-            }
-            catch (OperationCanceledException exception)
+        private sealed class ResultCompletionState : OperationCompletionState
+        {
+            private readonly TaskCompletionSource<IOperationResult<TResult>> _source =
+                new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public IOperationResult<TResult>? Result { private get; set; }
+            public Task<IOperationResult<TResult>> Promise => _source.Task;
+            public override Task Task => Promise;
+
+            public override void SetResult()
             {
-                _taskCompletionSource.SetCanceled(exception.CancellationToken);
+                var result = Result
+                    ?? throw new InvalidOperationException("Operation execution returned a null result.");
+                Result = null;
+                _source.SetResult(result);
             }
-            catch (Exception exception)
+
+            public override void SetCanceled(CancellationToken token)
             {
-                _taskCompletionSource.SetException(exception);
+                Result = null;
+                _source.SetCanceled(token);
+            }
+
+            public override void SetException(Exception exception)
+            {
+                Result = null;
+                _source.SetException(exception);
             }
         }
     }

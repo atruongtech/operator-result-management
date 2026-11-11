@@ -166,7 +166,7 @@ public class ExecutionContextTests
     {
         var context = new ExecutionContextBase();
         var instruction = new GraphInstruction(42);
-        IInstruction<ExecutionContextBase> untypedInstruction = instruction;
+        InstructionBase<ExecutionContextBase> untypedInstruction = instruction;
 
         var operation = context.Register(untypedInstruction);
 
@@ -183,13 +183,13 @@ public class ExecutionContextTests
         var context = new ExecutionContextBase();
         var instruction = new GraphInstruction(42);
         var operation = context.Register(instruction);
-        IInstruction<ExecutionContextBase> untypedInstruction = instruction;
+        InstructionBase<ExecutionContextBase> untypedInstruction = instruction;
         await context.ExecuteAsync().WaitAsync(_timeout);
 
         Assert.Same(operation, context.Register(instruction));
         Assert.Same(operation, context.Register(untypedInstruction));
         Assert.Throws<InvalidOperationException>(() => context.Register(new GraphInstruction(42)));
-        IInstruction<ExecutionContextBase> newUntypedInstruction = new GraphInstruction(42);
+        InstructionBase<ExecutionContextBase> newUntypedInstruction = new GraphInstruction(42);
         Assert.Throws<InvalidOperationException>(() => context.Register(newUntypedInstruction));
         Assert.Single(context.Operations);
     }
@@ -199,10 +199,10 @@ public class ExecutionContextTests
     {
         var context = new ExecutionContextBase();
         var instruction = new GraphInstruction(42);
-        IInstruction<ExecutionContextBase> untypedInstruction = instruction;
+        InstructionBase<ExecutionContextBase> untypedInstruction = instruction;
         ExecutionContextBase nullContext = null!;
-        IInstruction<int, ExecutionContextBase> nullInstruction = null!;
-        IInstruction<ExecutionContextBase> nullUntypedInstruction = null!;
+        InstructionBase<int, ExecutionContextBase> nullInstruction = null!;
+        InstructionBase<ExecutionContextBase> nullUntypedInstruction = null!;
 
         Assert.Throws<ArgumentNullException>("context", () => nullContext.Register(instruction));
         Assert.Throws<ArgumentNullException>("context", () => nullContext.Register(untypedInstruction));
@@ -285,7 +285,7 @@ public class ExecutionContextTests
 
         Assert.Empty(snapshot);
         Assert.Same(operation, context.Operations[instruction]);
-        var dictionary = Assert.IsAssignableFrom<IDictionary<IInstruction, IOperationInstance>>(context.Operations);
+        var dictionary = Assert.IsAssignableFrom<IDictionary<InstructionBase, OperationInstanceBase>>(context.Operations);
         Assert.Throws<NotSupportedException>(() => dictionary.Clear());
         Assert.Single(context.Operations);
     }
@@ -356,10 +356,10 @@ public class ExecutionContextTests
     }
 
     [Fact]
-    public async Task SynchronousExecuteFailureStillStartsRemainingOperations()
+    public async Task SynchronousWorkFailureStillStartsRemainingOperations()
     {
         var context = new ExecutionContextBase();
-        var error = new InvalidOperationException("Execute threw synchronously.");
+        var error = new InvalidOperationException("Work threw synchronously.");
         var failing = context.GetOrAddOperation(new TestInstruction(), () => new ThrowingOperation(error));
         var succeeding = context.GetOrAddOperation(new TestInstruction(),
             () => new TestOperation(context,
@@ -535,7 +535,7 @@ public class ExecutionContextTests
     }
 
     private static async Task AssertCanceledPromiseAsync<T>(
-        IOperationInstance<T> operation, CancellationToken token)
+        OperationInstanceBase<T> operation, CancellationToken token)
     {
         var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => operation.Promise().WaitAsync(_timeout));
@@ -548,37 +548,24 @@ public class ExecutionContextTests
     private static TaskCompletionSource<T> NewCompletionSource<T>()
         => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private sealed class TestInstruction : IInstruction
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-
-        public IReadOnlyList<IInstruction> Dependencies => Array.Empty<IInstruction>();
-    }
+    private sealed class TestInstruction : InstructionBase;
 
     private class GraphInstruction(int value, params GraphInstruction[] dependencies)
-        : IInstruction<int, ExecutionContextBase>
+        : InstructionBase<int, ExecutionContextBase>(dependencies)
     {
         private readonly IReadOnlyList<GraphInstruction> _dependencies =
             Array.AsReadOnly(dependencies.ToArray());
 
-        public Guid Id { get; init; } = Guid.NewGuid();
-
-        public IReadOnlyList<IInstruction> Dependencies => _dependencies;
-
-        public IOperationInstance<int> GetTypedOperation(ExecutionContextBase context)
+        protected override OperationInstanceBase<int> CreateOperation(
+            ExecutionContextBase context, InstructionInputs<ExecutionContextBase> inputs)
         {
-            return context.GetOrAddOperation(this, () =>
+            var operations = _dependencies.Select(dependency => inputs.GetOperation(dependency)).ToArray();
+            return new TestOperation(context, async token =>
             {
-                var operations = _dependencies.Select(dependency => dependency.GetTypedOperation(context)).ToArray();
-                return new TestOperation(context, async token =>
-                {
-                    var results = await Task.WhenAll(operations.Select(operation => operation.Promise().WaitAsync(token)));
-                    return new ImmediateResult<int>(value + results.Sum(result => result.GetResult()));
-                });
+                var results = await Task.WhenAll(operations.Select(operation => operation.Promise().WaitAsync(token)));
+                return new ImmediateResult<int>(value + results.Sum(result => result.GetResult()));
             });
         }
-
-        public IOperationInstance GetOperation(ExecutionContextBase context) => GetTypedOperation(context);
     }
 
     private sealed class EqualInstruction(int value, params GraphInstruction[] dependencies)
@@ -590,47 +577,38 @@ public class ExecutionContextTests
     }
 
     private sealed class TestOperation(
-        IExecutionContext context, Func<CancellationToken, Task<IOperationResult<int>>> core)
+        ExecutionContextBase context, Func<CancellationToken, Task<IOperationResult<int>>> core)
         : OperationInstanceBase<int>(context)
     {
         private int _invocationCount;
         public int InvocationCount => Volatile.Read(ref _invocationCount);
 
-        protected override Task<IOperationResult<int>> ExecuteCoreAsync(CancellationToken cancellationToken)
+        protected override Task<IOperationResult<int>> ExecuteResultAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _invocationCount);
             return core(cancellationToken);
         }
     }
 
-    private sealed class ThrowingOperation(Exception error) : IOperationInstance
+    private sealed class ThrowingOperation(Exception error) : OperationInstanceBase(new ExecutionContextBase())
     {
-        public Task Completion { get; } =
-            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously).Task;
-
         public int InvocationCount { get; private set; }
 
-        public Task Execute()
+        protected override Task ExecuteCoreAsync(CancellationToken cancellationToken)
         {
             InvocationCount++;
             throw error;
         }
     }
 
-    private sealed class CountingOperation : IOperationInstance
+    private sealed class CountingOperation() : OperationInstanceBase(new ExecutionContextBase())
     {
-        private readonly TaskCompletionSource _completion =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task Completion => _completion.Task;
-
         public int InvocationCount { get; private set; }
 
-        public Task Execute()
+        protected override Task ExecuteCoreAsync(CancellationToken cancellationToken)
         {
             InvocationCount++;
-            _completion.TrySetResult();
-            return Completion;
+            return Task.CompletedTask;
         }
     }
 }

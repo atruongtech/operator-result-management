@@ -13,17 +13,20 @@ Instructions can be immutable or mutable. The context preserves instruction-to-o
 
 ## What each abstraction represents
 
-| Abstraction | Responsibility | What it does not represent |
-|---|---|---|
-| `IProcess<TContext>` / `ProcessBase<TContext>` | A reusable collection of instructions and their dependency graph. | An active run, a UI model, or a sequential execution schedule. |
-| `IInstruction<TContext>` | A defined step, its configuration, and its direct upstream dependencies. Registers its operation and dependencies in the supplied context. | The execution of that step or its result. |
-| `IInstruction<TResult, TContext>` | An instruction whose operation produces a typed result. | A result value stored on the definition. |
-| `IExecutionContext` / `ExecutionContextBase` | One run's operation registry, shared cancellation token, and execution lifecycle. A derived context can supply run-specific services. | A historical snapshot of instruction configuration. |
-| `IOperationInstance<TResult>` / `OperationInstanceBase<TResult>` | The run-specific work, captured configuration, upstream operation references, and eventual result. | A reusable process definition. |
-| `IOperationResult<TResult>` / `ImmediateResult<TResult>` | The published value of a successful operation, accessed through `GetResult()`. | The instruction or the execution lifecycle. |
-| `ConditionalInstruction<TContext>` | A ready-to-use condition and a separately registered, owned subprocess body. | A value selector or permission to expose body-local operations. |
-| `IOperationInstance` / non-generic `OperationInstanceBase` | Execute-once work with an observation-only `Completion` task. | A typed result value. |
-| `ProcessRunRequest<TContext>` | A fixed selection of instruction references to register, either the whole process or a subset. | A deep snapshot of definitions or a guarantee of identical results when replayed. |
+| Abstraction | Responsibility |
+|---|---|
+| `ProcessBase` | A read-only, context-independent view of a process's instruction membership. |
+| `ProcessBase<TContext>` | A reusable instruction graph with library-owned membership edits, validation, and snapshots. |
+| `InstructionBase` | Reference identity, default stable ID, and direct dependency metadata. |
+| `InstructionBase<TContext>` | A defined step with library-owned registration and dependency resolution, plus an operation creation hook. |
+| `InstructionBase<TResult, TContext>` | An instruction whose operation produces a typed result, with shared typed and untyped registration. |
+| `InstructionInputs<TContext>` | Already resolved direct dependencies supplied to the operation creation hook. |
+| `ExecutionContextBase` | One run's operation registry, shared cancellation token, and execution lifecycle. A derived context can supply run-specific services. |
+| `OperationInstanceBase<TResult>` | The run-specific work, captured configuration, upstream operation references, and eventual result. |
+| `IOperationResult<TResult>` / `ImmediateResult<TResult>` | The published value of a successful operation, accessed through `GetResult()`. |
+| `ConditionalInstruction<TContext>` | A ready-to-use condition and a separately registered, owned subprocess body. |
+| Non-generic `OperationInstanceBase` | Execute-once work with an observation-only `Completion` task; the common base of all operations. |
+| `ProcessRunRequest<TContext>` | A fixed selection of instruction references to register, either the whole process or a subset. |
 
 Most types use the `operator_result_management` namespace. Both forms of `OperationInstanceBase` and `ImmediateResult<TResult>` use `operator_result_management.Basic`.
 
@@ -33,13 +36,45 @@ Most types use the `operator_result_management` namespace. Both forms of `Operat
 
 `Append` creates a dependent step from an existing process instruction. The returned instruction must declare that input as a direct dependency.
 
-The instruction collection is immutable, but its elements need not be. Adding steps replaces the collection; previously returned collections keep their membership. Collection order is not a promise of sequential execution. Data dependencies determine when a step can produce its result.
+`Instructions` exposes an `IReadOnlyList<InstructionBase<TContext>>`, not a concrete
+storage collection. Its membership is immutable, but its elements need not be.
+Adding steps replaces the collection; previously returned collections keep their
+membership. The same collection reference is returned until membership changes,
+including through the non-generic `ProcessBase` view. Collection order is not a
+promise of sequential execution. Data dependencies determine when a step can
+produce its result.
+
+Use `ProcessBase<TContext>` directly, or derive to compose domain-specific
+instructions through `Add` and `Append`. Membership, dependency traversal,
+reference-identity sharing, validation, synchronization, and snapshot behavior
+remain library-owned. `Add` and `Append` are nonvirtual; the `Instructions` override
+is sealed. Do not hide these members in derived processes.
+
+**Breaking API change:** `IProcess` and `IProcess<TContext>` have been removed.
+Replace them with `ProcessBase` for context-independent display/selection and
+`ProcessBase<TContext>` for composition, registration, run requests, and conditional
+bodies. Custom implementations must derive from the typed base and compose
+instructions instead of implementing their own graph behavior. Code relying on
+`Instructions` being an `ImmutableList` must use its read-only list API or create
+its own immutable copy.
 
 Selection, UI notifications, and editing workflows belong to the client.
 
 ### Instruction: identity and registration
 
-An instruction declares every direct upstream instruction whose operation it consumes in `Dependencies`. During registration, it resolves those dependencies in the same context and calls `GetOrAddOperation(this, factory)` for its own operation.
+An instruction derives from `InstructionBase<TContext>` for completion-only work or
+`InstructionBase<TResult, TContext>` for a typed result. Pass direct dependencies to
+the base constructor; it validates and copies the input array into a read-only list.
+Mutable definitions can override `Dependencies`, which must remain stable during
+graph traversal and registration.
+
+The base registers every declared dependency in the same context before calling
+the protected `CreateOperation(context, inputs)` hook. The hook constructs an operation
+using `inputs.GetOperation(upstreamInstruction)` to obtain typed or completion-only
+upstream operations. Resolving an undeclared input fails, even if it is already
+registered elsewhere in the context. Repeated dependencies resolve to one operation.
+Declaring a dependency registers it, but execution ordering still requires awaiting
+its result or completion in the consuming operation.
 
 Sharing uses **reference identity**, not `Id` or overridden equality:
 
@@ -47,25 +82,124 @@ Sharing uses **reference identity**, not `Id` or overridden equality:
 - Separate instruction objects remain separate steps, even with identical configuration or the same `Id`.
 - A fresh context creates independent operations for a new run.
 
-`IInstruction.Id` is stable metadata useful for client-side correlation. It is not a registry key or a library-enforced uniqueness constraint.
+`InstructionBase.Id` is stable metadata useful for client-side correlation. The base
+generates a GUID by default; clients can supply an ID through its init-only property.
+It is not a registry key or a library-enforced uniqueness constraint.
 
 Registration constructs the graph; it must not start or wait for execution. Operation factories must capture the run's configuration and upstream operation references so later instruction edits cannot change the registered work.
 
+For example, an instruction can bind an integer input to a custom operation:
+
+```csharp
+public sealed class AddInstruction(InstructionBase<int, ExecutionContextBase> input, int amount)
+    : InstructionBase<int, ExecutionContextBase>(input)
+{
+    protected override OperationInstanceBase<int> CreateOperation(
+        ExecutionContextBase context, InstructionInputs<ExecutionContextBase> inputs) =>
+        new AddOperation(context, inputs.GetOperation(input), amount);
+}
+
+public sealed class AddOperation(
+    ExecutionContextBase context, OperationInstanceBase<int> input, int amount)
+    : OperationInstanceBase<int>(context)
+{
+    protected override async Task<IOperationResult<int>> ExecuteResultAsync(
+        CancellationToken cancellationToken)
+    {
+        var result = await input.Promise().WaitAsync(cancellationToken);
+        return new ImmediateResult<int>(checked(result.GetResult() + amount));
+    }
+}
+```
+
+`GetOperation` and `GetTypedOperation` are nonvirtual library-owned entry points;
+do not hide them. Both return the same registered operation. Override only
+`CreateOperation`, not registration or typed/untyped forwarding. Registry insertion
+through `GetOrAddOperation` is internal to the library.
+
+**Breaking API change:** `IInstruction`, `IInstruction<TContext>`, and
+`IInstruction<TResult, TContext>` have been removed. Replace their signature types
+with the corresponding `InstructionBase` forms in `operator_result_management`.
+Processes, run selections, factory bindings, registration, and operation-map keys
+now use these bases. Migrate implementations to derive from a context-typed base,
+pass dependencies to its constructor (or override `Dependencies` for mutable
+definitions), and move operation construction into `CreateOperation(context, inputs)`.
+Use `inputs.GetOperation(input)` instead of recursively registering upstream work.
+Generic base classes are invariant: use the same `TContext` throughout a process
+and its instructions; the former untyped interface's context contravariance is
+not available.
+
 ### Operation: work and its eventual result
 
-Every `IOperationInstance` exposes `Completion` to observe success, failure, or cancellation **without starting execution**, regardless of its result type. `Execute()` starts an operation and returns that exact task: `ReferenceEquals(operation.Completion, operation.Execute())` is always true. With either `OperationInstanceBase`, execution happens once per instance. A failure or cancellation is not retried.
+Every operation derives from `OperationInstanceBase`, which exposes `Completion` to observe success, failure, or cancellation **without starting execution**, regardless of its result type. `Execute()` starts an operation and returns that exact task: `ReferenceEquals(operation.Completion, operation.Execute())` is always true. Execution happens once per instance. A failure or cancellation is not retried.
 
 `Promise()` observes the eventual result **without starting execution**. Dependent operations await upstream promises instead of running separate copies of upstream work.
 
-Typed `OperationInstanceBase<TResult>` uses its result promise as the shared completion and execution task; `Promise()` retains typed value access. Dependencies that need only completion can await `Completion` through `IOperationInstance`, without casts.
+Typed `OperationInstanceBase<TResult>` inherits the non-generic base and uses its result promise as the shared completion and execution task; `ReferenceEquals(operation.Completion, operation.Promise())` is also true. `Promise()` retains typed value access. Dependencies that need only completion can accept `OperationInstanceBase` and await `Completion`, without casts.
 
-The base class publishes a result only after `ExecuteCoreAsync` succeeds. Execution failures and cancellation propagate through both `Execute()` and `Promise()`. Returning a null result is an execution failure.
+The base class publishes a typed result only after `ExecuteResultAsync` succeeds and the final cancellation check passes. Execution failures and cancellation propagate through the shared completion/execution/promise task. Returning a null task or result wrapper is an explicit execution failure; a non-null wrapper may contain a null value.
 
 All consumers receive the same published result. Prefer immutable result values; coordinate access if sharing mutable values. `ImmediateResult<T>` wraps a value without deep-copying it.
 
-**Breaking interface change:** `ICompletionOperationInstance` has been removed. Custom `IOperationInstance` implementations must expose an observation-only `Completion` task and return that same task from `Execute()`.
+### Extending an operation
+
+Derive from `OperationInstanceBase` for completion-only work and override
+`ExecuteCoreAsync(CancellationToken)`. For typed results, derive from
+`OperationInstanceBase<TResult>` and override `ExecuteResultAsync(CancellationToken)`:
+
+```csharp
+public sealed class ConstantOperation : OperationInstanceBase<int>
+{
+    private readonly int _value;
+
+    public ConstantOperation(ExecutionContextBase context, int value) : base(context)
+    {
+        _value = value;
+    }
+
+    protected override Task<IOperationResult<int>> ExecuteResultAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult<IOperationResult<int>>(new ImmediateResult<int>(_value));
+}
+```
+
+Constructors and observation do not invoke work. First activation starts the work hook
+on the calling thread, running synchronously until its first asynchronous wait.
+The library owns activation, result publication, and error handling; `Execute()`,
+`Completion`, and `Promise()` are nonvirtual and must not be hidden. Further subclasses
+can override an unsealed work hook without replacing lifecycle behavior.
+
+Concurrent and reentrant `Execute()` calls return the same task without invoking work
+again. Do not await your own completion or promise: that creates a self-dependency.
+The runner reports failures through the shared task, not a separate unobserved faulted
+runner task, and schedules task continuations asynchronously.
+
+The base checks the owning context's token before work and before publishing success.
+Work must observe cancellation during waits and long-running computation. Canceling an
+observer's `WaitAsync` does not cancel the shared operation; cancellation after successful
+publication does not change its outcome. Capture configuration and upstream operations
+when registering the operation, rather than reading mutable instruction state in the
+work hook. Copy mutable configuration where needed; the base cannot infer how to clone it.
+
+**Breaking API change:** `IOperationInstance` and `IOperationInstance<TResult>` have been
+removed. Replace signature types with `OperationInstanceBase` and
+`OperationInstanceBase<TResult>` from `operator_result_management.Basic`. Direct
+implementations must instead derive from the matching base and move their work into its
+protected hook. Rename existing typed `ExecuteCoreAsync` overrides to `ExecuteResultAsync`;
+completion-only overrides keep `ExecuteCoreAsync`. `IOperationResult<TResult>` remains
+unchanged in `operator_result_management`. The former completion-only interface is also
+replaced by the non-generic base.
 
 ## Define and run a process
+
+Execution contexts use the library-owned `ExecutionContextBase` engine. Use it directly
+or derive from it to add run-specific services; registration, scope ownership, and
+execution remain library-controlled. Generic APIs retain `TContext`, constrained to
+`ExecutionContextBase`, so instructions can access custom context services.
+
+**Breaking API change:** the execution context interface has been removed. Replace former
+interface-typed parameters and constraints with `ExecutionContextBase`, and migrate custom
+context implementations to derive from it.
 
 Compose instructions with `Add` and `Append`, create a fresh execution context, and register the process before executing it. The repository's [configurable number pipeline](configurable-number-pipeline-poc/Program.cs) serves as the usage example.
 
@@ -86,7 +220,7 @@ Use a fresh context for a partial run: context execution also starts anything el
 ## Conditional subprocesses
 
 `ConditionalInstruction<TContext>` defines a completion-only conditional instruction
-with an owned `IProcess<TContext>` body. `TContext` must derive from `ExecutionContextBase`.
+with an owned `ProcessBase<TContext>` body. `TContext` must derive from `ExecutionContextBase`.
 Use it directly by supplying a factory that creates a fresh body context with the parent's
 cancellation token and the services required by the body:
 
@@ -122,8 +256,9 @@ this is not a sequential statement scheduler.
 
 - Pass outer instructions through `outerInputs`. The condition and the transitive
   dependencies of all declared inputs are also available as imports. Body instructions
-  use their normal `GetTypedOperation(context)` calls; imported lookups return the
-  existing outer operation, not a second copy.
+  declare inputs normally; base registration resolves imported lookups to the existing
+  outer operation, and `inputs.GetOperation(input)` supplies it to the creation hook
+  without making a second copy.
 - Imports are not child-owned operations and are excluded from the child's `Operations`
   mapping and execution list. They execute in their owning outer scope even if the body
   is not taken. Put work inside the body if it should execute only when the condition is true.
@@ -143,7 +278,7 @@ class handles registration, imported lookups, freezing, and execution.
 
 ### Completion without a value
 
-`conditional.GetOperation(context)` returns `IOperationInstance`, not a typed
+`conditional.GetOperation(context)` returns `OperationInstanceBase`, not a typed
 result operation. Its `Completion` task observes success, failure, or cancellation without
 starting execution. Start the owning parent context as usual:
 
@@ -205,11 +340,11 @@ The mapping retains instruction objects while the context or a returned mapping 
 
 `IInstructionFactory<TContext>` binds candidate inputs and returns a
 `BindingResponse<TContext>`. A successful `ReadyResponse<TContext>` exposes a
-`Create` delegate returning `IInstruction<TContext>`, so callers can add the
-constructed instruction directly to `IProcess<TContext>` without casting.
+`Create` delegate returning `InstructionBase<TContext>`, so callers can add the
+constructed instruction directly to `ProcessBase<TContext>` without casting.
 `FailedResponse<TContext>` reports why the inputs cannot be bound.
 
-Inputs remain `IReadOnlyList<IInstruction>` because factories validate their
+Inputs use `IReadOnlyList<InstructionBase>` because factories validate their
 required input count, result types, and context compatibility at binding time.
 `InstructionFactoryBinding` retains untyped instruction references for display.
 The factory registry and selection helper must preserve `TContext` through to

@@ -8,45 +8,35 @@ namespace configurable_number_pipeline_poc;
 /// Adds a scalar to every value in an immutable integer list.
 /// A sum outside int range overflows.
 /// </summary>
-public sealed class DistributeInstruction : IInstruction<ImmutableList<int>, NumberPipelineExecutionContext>
+public sealed class DistributeInstruction : InstructionBase<ImmutableList<int>, NumberPipelineExecutionContext>
 {
-    private readonly IInstruction<int, NumberPipelineExecutionContext> _value;
-    private readonly IInstruction<ImmutableList<int>, NumberPipelineExecutionContext> _values;
-
-    public Guid Id { get; } = Guid.NewGuid();
-
-    public IReadOnlyList<IInstruction> Dependencies { get; }
+    private readonly InstructionBase<int, NumberPipelineExecutionContext> _value;
+    private readonly InstructionBase<ImmutableList<int>, NumberPipelineExecutionContext> _values;
 
     public DistributeInstruction(
-        IInstruction<int, NumberPipelineExecutionContext> toDistribute,
-        IInstruction<ImmutableList<int>, NumberPipelineExecutionContext> distributeAmong)
+        InstructionBase<int, NumberPipelineExecutionContext> toDistribute,
+        InstructionBase<ImmutableList<int>, NumberPipelineExecutionContext> distributeAmong)
+        : base(toDistribute, distributeAmong)
     {
-        ArgumentNullException.ThrowIfNull(toDistribute);
-        ArgumentNullException.ThrowIfNull(distributeAmong);
         _value = toDistribute;
         _values = distributeAmong;
-        Dependencies = Array.AsReadOnly<IInstruction>([toDistribute, distributeAmong]);
     }
 
-    public IOperationInstance<ImmutableList<int>> GetTypedOperation(NumberPipelineExecutionContext context) =>
-        context.GetOrAddOperation(this,
-            () => new DistributeOperation(context,
-                _value.GetTypedOperation(context), _values.GetTypedOperation(context)));
-
-    public IOperationInstance GetOperation(NumberPipelineExecutionContext context) =>
-        GetTypedOperation(context);
+    protected override OperationInstanceBase<ImmutableList<int>> CreateOperation(
+        NumberPipelineExecutionContext context, InstructionInputs<NumberPipelineExecutionContext> inputs) =>
+        new DistributeOperation(context, inputs.GetOperation(_value), inputs.GetOperation(_values));
 }
 
 public sealed class DistributeOperation : OperationInstanceBase<ImmutableList<int>>
 {
     private readonly NumberPipelineExecutionContext _context;
-    private readonly IOperationInstance<int> _value;
-    private readonly IOperationInstance<ImmutableList<int>> _values;
+    private readonly OperationInstanceBase<int> _value;
+    private readonly OperationInstanceBase<ImmutableList<int>> _values;
 
     public DistributeOperation(
         NumberPipelineExecutionContext context,
-        IOperationInstance<int> value,
-        IOperationInstance<ImmutableList<int>> values) : base(context)
+        OperationInstanceBase<int> value,
+        OperationInstanceBase<ImmutableList<int>> values) : base(context)
     {
         ArgumentNullException.ThrowIfNull(value);
         ArgumentNullException.ThrowIfNull(values);
@@ -55,7 +45,7 @@ public sealed class DistributeOperation : OperationInstanceBase<ImmutableList<in
         _values = values;
     }
 
-    protected override async Task<IOperationResult<ImmutableList<int>>> ExecuteCoreAsync(
+    protected override async Task<IOperationResult<ImmutableList<int>>> ExecuteResultAsync(
         CancellationToken cancellationToken)
     {
         var value = (await _value.Promise().WaitAsync(cancellationToken)).GetResult();

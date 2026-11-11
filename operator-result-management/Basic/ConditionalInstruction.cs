@@ -8,22 +8,21 @@ namespace operator_result_management;
 /// Body instructions are private to their scope. Explicit outer inputs, the condition,
 /// and their transitive dependencies are imported without duplicating their operations.
 /// </summary>
-public class ConditionalInstruction<TContext> : IInstruction<TContext>
+public class ConditionalInstruction<TContext> : InstructionBase<TContext>
     where TContext : ExecutionContextBase
 {
-    private readonly IReadOnlyList<IInstruction<TContext>> _dependencies;
+    private readonly IReadOnlyList<InstructionBase<TContext>> _dependencies;
     private readonly Func<TContext, TContext> _bodyContextFactory;
 
-    public Guid Id { get; } = Guid.NewGuid();
-    public IInstruction<bool, TContext> Condition { get; }
-    public IProcess<TContext> Body { get; }
-    public IReadOnlyList<IInstruction> Dependencies => _dependencies;
+    public InstructionBase<bool, TContext> Condition { get; }
+    public ProcessBase<TContext> Body { get; }
+    public override IReadOnlyList<InstructionBase> Dependencies => _dependencies;
 
     public ConditionalInstruction(
-        IInstruction<bool, TContext> condition,
-        IProcess<TContext> body,
+        InstructionBase<bool, TContext> condition,
+        ProcessBase<TContext> body,
         Func<TContext, TContext> bodyContextFactory,
-        IEnumerable<IInstruction<TContext>>? outerInputs = null)
+        IEnumerable<InstructionBase<TContext>>? outerInputs = null)
     {
         ArgumentNullException.ThrowIfNull(condition);
         ArgumentNullException.ThrowIfNull(body);
@@ -31,7 +30,7 @@ public class ConditionalInstruction<TContext> : IInstruction<TContext>
         Condition = condition;
         Body = body;
         _bodyContextFactory = bodyContextFactory;
-        var dependencies = new List<IInstruction<TContext>> { condition };
+        var dependencies = new List<InstructionBase<TContext>> { condition };
         if (outerInputs is not null)
         {
             foreach (var input in outerInputs)
@@ -56,42 +55,38 @@ public class ConditionalInstruction<TContext> : IInstruction<TContext>
     /// Registers the condition, outer inputs, and a frozen private body without executing
     /// any work. The returned completion signal does not expose body results.
     /// </summary>
-    public IOperationInstance GetOperation(TContext context)
+    protected override OperationInstanceBase CreateOperation(TContext context, InstructionInputs<TContext> inputs)
     {
-        ArgumentNullException.ThrowIfNull(context);
-        return context.GetOrAddOperation(this, () =>
+        var externalGraph = new ProcessBase<TContext>();
+        foreach (var dependency in _dependencies)
+            externalGraph.Add(dependency);
+        var imports = new Dictionary<InstructionBase, OperationInstanceBase>(ReferenceEqualityComparer.Instance);
+        foreach (var instruction in externalGraph.Instructions)
+            imports.Add(instruction, instruction.GetOperation(context));
+        var condition = inputs.GetOperation(Condition);
+
+        var bodyGraph = new ProcessBase<TContext>();
+        foreach (var instruction in Body.Instructions)
+            bodyGraph.Add(instruction);
+
+        var bodyContext = CreateBodyContext(context)
+            ?? throw new InvalidOperationException("Body context factory returned null.");
+        bodyContext.AttachScope(context, imports);
+        try
         {
-            var externalGraph = new ProcessBase<TContext>();
-            foreach (var dependency in _dependencies)
-                externalGraph.Add(dependency);
-            var imports = new Dictionary<IInstruction, IOperationInstance>(ReferenceEqualityComparer.Instance);
-            foreach (var instruction in externalGraph.Instructions)
-                imports.Add(instruction, instruction.GetOperation(context));
-            var condition = Condition.GetTypedOperation(context);
-
-            var bodyGraph = new ProcessBase<TContext>();
-            foreach (var instruction in Body.Instructions)
-                bodyGraph.Add(instruction);
-
-            var bodyContext = CreateBodyContext(context)
-                ?? throw new InvalidOperationException("Body context factory returned null.");
-            bodyContext.AttachScope(context, imports);
-            try
-            {
-                bodyContext.Register(bodyGraph);
-                bodyContext.FreezeRegistration();
-                return new ConditionalOperation(context, condition, bodyContext);
-            }
-            catch
-            {
-                bodyContext.DiscardScope();
-                throw;
-            }
-        });
+            bodyContext.Register(bodyGraph);
+            bodyContext.FreezeRegistration();
+            return new ConditionalOperation(context, condition, bodyContext);
+        }
+        catch
+        {
+            bodyContext.DiscardScope();
+            throw;
+        }
     }
 
     private sealed class ConditionalOperation(
-        TContext context, IOperationInstance<bool> condition, TContext bodyContext)
+        TContext context, OperationInstanceBase<bool> condition, TContext bodyContext)
         : OperationInstanceBase(context)
     {
         protected override async Task ExecuteCoreAsync(CancellationToken cancellationToken)

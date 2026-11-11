@@ -5,43 +5,32 @@ using operator_result_management.Basic;
 
 namespace configurable_number_pipeline_poc;
 
-public class FactorInstruction : IInstruction<ImmutableList<int>, NumberPipelineExecutionContext>
+public class FactorInstruction : InstructionBase<ImmutableList<int>, NumberPipelineExecutionContext>
 {
-    private readonly IInstruction<int, NumberPipelineExecutionContext> _input;
+    private readonly InstructionBase<int, NumberPipelineExecutionContext> _input;
 
-    public Guid Id {get;}
-
-    public IReadOnlyList<IInstruction> Dependencies { get; }
-
-    public FactorInstruction(IInstruction<int, NumberPipelineExecutionContext> input)
+    public FactorInstruction(InstructionBase<int, NumberPipelineExecutionContext> input) : base(input)
     {
-        ArgumentNullException.ThrowIfNull(input);
-        Id = Guid.NewGuid();
         _input = input;
-        Dependencies = Array.AsReadOnly<IInstruction>([input]);
     }
 
-    public IOperationInstance<ImmutableList<int>> GetTypedOperation(NumberPipelineExecutionContext context)
-    {
-        return context.GetOrAddOperation(this,
-            () => new FactorOperation(context, _input.GetTypedOperation(context)));
-    }
-
-    public IOperationInstance GetOperation(NumberPipelineExecutionContext context) => GetTypedOperation(context);
+    protected override OperationInstanceBase<ImmutableList<int>> CreateOperation(
+        NumberPipelineExecutionContext context, InstructionInputs<NumberPipelineExecutionContext> inputs) =>
+        new FactorOperation(context, inputs.GetOperation(_input));
 }
 
 public class FactorOperation : OperationInstanceBase<ImmutableList<int>>
 {
     private readonly NumberPipelineExecutionContext _context;
-    private readonly IOperationInstance<int> _input;
+    private readonly OperationInstanceBase<int> _input;
 
-    public FactorOperation(NumberPipelineExecutionContext context, IOperationInstance<int> input) : base(context)
+    public FactorOperation(NumberPipelineExecutionContext context, OperationInstanceBase<int> input) : base(context)
     {
         _context = context;
         _input = input;
     }
 
-    protected override async Task<IOperationResult<ImmutableList<int>>> ExecuteCoreAsync(
+    protected override async Task<IOperationResult<ImmutableList<int>>> ExecuteResultAsync(
         CancellationToken cancellationToken)
     {
         var result = await _input.Promise().WaitAsync(cancellationToken);

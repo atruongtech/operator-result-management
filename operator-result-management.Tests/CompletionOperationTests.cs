@@ -12,7 +12,7 @@ public class CompletionOperationTests
     {
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var operation = new CompletionOperation(new ExecutionContextBase(), _ => release.Task);
-        IOperationInstance untyped = operation;
+        OperationInstanceBase untyped = operation;
         var completion = untyped.Completion;
         Assert.Same(completion, untyped.Completion);
         Assert.False(completion.IsCompleted);
@@ -145,7 +145,7 @@ public class CompletionOperationTests
         Assert.True(operation.Completion.IsCompletedSuccessfully);
     }
 
-    private sealed class CompletionOperation(IExecutionContext context, Func<CancellationToken, Task> work)
+    private sealed class CompletionOperation(ExecutionContextBase context, Func<CancellationToken, Task> work)
         : OperationInstanceBase(context)
     {
         public int InvocationCount { get; private set; }

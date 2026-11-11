@@ -1,3 +1,5 @@
+using operator_result_management.Basic;
+
 namespace operator_result_management
 {
     /// <summary>
@@ -11,9 +13,9 @@ namespace operator_result_management
         /// a separate context creates independent operations. Register every selected instruction
         /// before execution starts. Existing registrations remain accessible afterward.
         /// </summary>
-        public static IOperationInstance<TResult> Register<TResult, TContext>(
-            this TContext context, IInstruction<TResult, TContext> instruction)
-            where TContext : IExecutionContext
+        public static OperationInstanceBase<TResult> Register<TResult, TContext>(
+            this TContext context, InstructionBase<TResult, TContext> instruction)
+            where TContext : ExecutionContextBase
         {
             ArgumentNullException.ThrowIfNull(context);
             ArgumentNullException.ThrowIfNull(instruction);
@@ -24,9 +26,9 @@ namespace operator_result_management
         /// Registers an instruction and its transitive dependencies without executing them.
         /// Uses the same reference-identity and registration-lifetime rules as typed registration.
         /// </summary>
-        public static IOperationInstance Register<TContext>(
-            this TContext context, IInstruction<TContext> instruction)
-            where TContext : IExecutionContext
+        public static OperationInstanceBase Register<TContext>(
+            this TContext context, InstructionBase<TContext> instruction)
+            where TContext : ExecutionContextBase
         {
             ArgumentNullException.ThrowIfNull(context);
             ArgumentNullException.ThrowIfNull(instruction);
@@ -41,8 +43,8 @@ namespace operator_result_management
         /// replay in a fresh context uses their configuration at registration time.
         /// </summary>
         public static ProcessRunRequest<TContext> Register<TContext>(
-            this TContext context, IProcess<TContext> process)
-            where TContext : IExecutionContext
+            this TContext context, ProcessBase<TContext> process)
+            where TContext : ExecutionContextBase
         {
             ArgumentNullException.ThrowIfNull(context);
             ArgumentNullException.ThrowIfNull(process);
@@ -58,7 +60,7 @@ namespace operator_result_management
         /// </summary>
         public static ProcessRunRequest<TContext> Register<TContext>(
             this TContext context, ProcessRunRequest<TContext> request)
-            where TContext : IExecutionContext
+            where TContext : ExecutionContextBase
         {
             ArgumentNullException.ThrowIfNull(context);
             ArgumentNullException.ThrowIfNull(request);

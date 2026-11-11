@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Reflection;
 using operator_result_management.Basic;
 using Xunit;
 
@@ -11,17 +12,17 @@ public class ProcessTests
     [Fact]
     public void AddingRootDiscoversDistinctStepsAndDependencyLinks()
     {
-        IProcess<ExecutionContextBase> process = new ProcessBase<ExecutionContextBase>();
+        var process = new ProcessBase<ExecutionContextBase>();
         var input = new Step(40);
         var left = new Step(1, input);
         var right = new Step(2, input);
         var root = new Step(0, left, right);
         process.Add(root);
 
-        Assert.Equal(new IInstruction[] { input, left, right, root }, process.Instructions);
+        Assert.Equal(new InstructionBase[] { input, left, right, root }, process.Instructions);
         Assert.Same(input, Assert.Single(left.Dependencies));
         Assert.Same(input, Assert.Single(right.Dependencies));
-        Assert.Equal(new IInstruction[] { left, right }, root.Dependencies);
+        Assert.Equal(new InstructionBase[] { left, right }, root.Dependencies);
         var instructions = process.Instructions;
         process.Add(root);
         Assert.Same(instructions, process.Instructions);
@@ -30,25 +31,25 @@ public class ProcessTests
     [Fact]
     public void InstructionCollectionsAreImmutableAndDependenciesAreReadOnly()
     {
-        IProcess<ExecutionContextBase> process = new ProcessBase<ExecutionContextBase>();
+        var process = new ProcessBase<ExecutionContextBase>();
         var input = new Step(40);
-        IInstruction<int, ExecutionContextBase>[] dependencies = [input];
+        InstructionBase<int, ExecutionContextBase>[] dependencies = [input];
         var output = new Step(2, dependencies);
         dependencies[0] = new Step(100);
         process.Add(output);
-        ImmutableList<IInstruction<ExecutionContextBase>> instructions = process.Instructions;
-        IProcess untypedProcess = process;
+        IReadOnlyList<InstructionBase<ExecutionContextBase>> instructions = process.Instructions;
+        ProcessBase untypedProcess = process;
 
         Assert.Same(instructions, untypedProcess.Instructions);
         Assert.Same(input, instructions[0]);
         Assert.Same(output, instructions[1]);
         Assert.Same(input, Assert.Single(output.Dependencies));
         Assert.Throws<NotSupportedException>(() =>
-            Assert.IsAssignableFrom<IList<IInstruction<int, ExecutionContextBase>>>(output.Dependencies).Clear());
+            Assert.IsAssignableFrom<IList<InstructionBase>>(output.Dependencies).Clear());
         Assert.Throws<NotSupportedException>(() =>
-            Assert.IsAssignableFrom<IList<IInstruction<ExecutionContextBase>>>(instructions).Clear());
+            Assert.IsAssignableFrom<IList<InstructionBase<ExecutionContextBase>>>(instructions).Clear());
         var added = new Step(3);
-        var separateList = instructions.Add(added);
+        var separateList = instructions.ToImmutableList().Add(added);
         Assert.Equal(3, separateList.Count);
         Assert.Same(added, separateList[2]);
         Assert.Same(instructions, process.Instructions);
@@ -68,7 +69,7 @@ public class ProcessTests
         var left = process.Append(input, source => new Step(1, source));
         var right = process.Append(input, source => new Step(2, source));
 
-        Assert.Equal(new IInstruction[] { input, left, right }, process.Instructions);
+        Assert.Equal(new InstructionBase[] { input, left, right }, process.Instructions);
         var context = new ExecutionContextBase();
         var request = context.Register(process);
         Assert.Equal(3, context.Operations.Count);
@@ -139,7 +140,7 @@ public class ProcessTests
         var dependent = process.Append(input, source => new Step(2, source));
         var instructions = process.Instructions;
         var fullRequest = new ProcessRunRequest<ExecutionContextBase>(process);
-        IInstruction<ExecutionContextBase>[] selection = [input];
+        InstructionBase<ExecutionContextBase>[] selection = [input];
         var request = new ProcessRunRequest<ExecutionContextBase>(process, selection);
         selection[0] = dependent;
         var laterStep = process.Append(dependent, source => new Step(1, source));
@@ -151,7 +152,7 @@ public class ProcessTests
         Assert.Equal(3, process.Instructions.Count);
         Assert.Same(input, Assert.Single(request.SelectedInstructions));
         Assert.Throws<NotSupportedException>(() =>
-            Assert.IsAssignableFrom<IList<IInstruction<ExecutionContextBase>>>(request.SelectedInstructions).Clear());
+            Assert.IsAssignableFrom<IList<InstructionBase<ExecutionContextBase>>>(request.SelectedInstructions).Clear());
         var laterRequest = new ProcessRunRequest<ExecutionContextBase>(process, [laterStep]);
         Assert.Same(laterStep, Assert.Single(laterRequest.SelectedInstructions));
 
@@ -271,7 +272,7 @@ public class ProcessTests
     public void ClientCanDetectEffectiveEditsByComparingInstructionCollections()
     {
         var process = new ProcessBase<ExecutionContextBase>();
-        IProcess definition = process;
+        ProcessBase definition = process;
         var empty = process.Instructions;
         var input = new Step(40);
 
@@ -339,8 +340,8 @@ public class ProcessTests
         var before = process.Instructions;
         var first = new MalformedInstruction();
         var second = new MalformedInstruction();
-        first.Dependencies = Array.AsReadOnly<IInstruction>([selfCycle ? first : second]);
-        second.Dependencies = Array.AsReadOnly<IInstruction>([first]);
+        first.DeclaredDependencies = Array.AsReadOnly<InstructionBase>([selfCycle ? first : second]);
+        second.DeclaredDependencies = Array.AsReadOnly<InstructionBase>([first]);
         var error = Assert.Throws<InvalidOperationException>(() => process.Add(first));
 
         Assert.Contains("Cyclic", error.Message);
@@ -358,11 +359,11 @@ public class ProcessTests
         var before = process.Instructions;
         var instruction = new MalformedInstruction
         {
-            Dependencies = invalid switch
+            DeclaredDependencies = invalid switch
             {
                 "null-list" => null!,
-                "null-entry" => Array.AsReadOnly<IInstruction>([new Step(1), null!]),
-                "wrong-context" => Array.AsReadOnly<IInstruction>([new Step(1), new SpecializedInstruction()]),
+                "null-entry" => Array.AsReadOnly<InstructionBase>([new Step(1), null!]),
+                "wrong-context" => Array.AsReadOnly<InstructionBase>([new Step(1), new SpecializedInstruction()]),
                 _ => throw new ArgumentOutOfRangeException(nameof(invalid))
             }
         };
@@ -420,9 +421,9 @@ public class ProcessTests
         var input = new Step(40);
         process.Add(input);
         var instructions = process.Instructions;
-        IInstruction<int, ExecutionContextBase> nullInstruction = null!;
+        InstructionBase<int, ExecutionContextBase> nullInstruction = null!;
         ExecutionContextBase nullContext = null!;
-        IProcess<ExecutionContextBase> nullProcess = null!;
+        ProcessBase<ExecutionContextBase> nullProcess = null!;
         ProcessRunRequest<ExecutionContextBase> nullRequest = null!;
         var request = new ProcessRunRequest<ExecutionContextBase>(process);
 
@@ -524,7 +525,7 @@ public class ProcessTests
 
         var request = context.Register(process);
 
-        Assert.Equal(new IInstruction[] { input, middle, output }, process.Instructions);
+        Assert.Equal(new InstructionBase[] { input, middle, output }, process.Instructions);
         Assert.Equal(3, request.SelectedInstructions.Count);
         Assert.Equal(3, context.Operations.Count);
         Assert.False(context.Register(output).Promise().IsCompleted);
@@ -533,41 +534,85 @@ public class ProcessTests
         Assert.Same(input, Assert.Single(middle.Dependencies));
         Assert.Same(middle, Assert.Single(output.Dependencies));
         Assert.Throws<NotSupportedException>(() =>
-            Assert.IsAssignableFrom<IList<IInstruction<int, ExecutionContextBase>>>(output.Dependencies).Clear());
+            Assert.IsAssignableFrom<IList<InstructionBase>>(output.Dependencies).Clear());
     }
 
-    private class Step : IInstruction<int, ExecutionContextBase>
+    [Fact]
+    public async Task DerivedProcessesComposeThroughLibraryOwnedGraphAndRunSelection()
+    {
+        var process = new ComposedProcess();
+        ProcessBase<ExecutionContextBase> typed = process;
+        ProcessBase untyped = process;
+
+        Assert.Equal(new InstructionBase[] { process.Input, process.Output }, typed.Instructions);
+        Assert.Same(typed.Instructions, untyped.Instructions);
+        var before = untyped.Instructions;
+        typed.Add(process.Output);
+        Assert.Same(before, untyped.Instructions);
+
+        var context = new ExecutionContextBase();
+        context.Register(new ProcessRunRequest<ExecutionContextBase>(typed, [process.Output]));
+        await context.ExecuteAsync().WaitAsync(_timeout);
+
+        Assert.Equal(42, (await context.Register(process.Output).Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Same(before, untyped.Instructions);
+        Assert.Equal(2, context.Operations.Count);
+    }
+
+    [Fact]
+    public void ProcessApiRemovesContractsAndProtectsGraphBehaviorWithoutExposingStorageType()
+    {
+        Assert.DoesNotContain(typeof(ProcessBase).Assembly.GetExportedTypes(),
+            type => type.IsInterface && type.Name.Split('`')[0] == "IProcess");
+        var processType = typeof(ProcessBase<ExecutionContextBase>);
+        var instructions = processType.GetProperty(nameof(ProcessBase.Instructions),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!;
+
+        Assert.Equal(typeof(IReadOnlyList<InstructionBase<ExecutionContextBase>>), instructions.PropertyType);
+        Assert.True(instructions.GetMethod!.IsFinal);
+        Assert.Null(instructions.SetMethod);
+        Assert.False(processType.GetMethod(nameof(ProcessBase<ExecutionContextBase>.Add))!.IsVirtual);
+        Assert.False(processType.GetMethod(nameof(ProcessBase<ExecutionContextBase>.Append))!.IsVirtual);
+        Assert.Equal(typeof(IReadOnlyList<InstructionBase>),
+            typeof(ProcessBase).GetProperty(nameof(ProcessBase.Instructions))!.PropertyType);
+    }
+
+    private sealed class ComposedProcess : ProcessBase<ExecutionContextBase>
+    {
+        public InstructionBase<int, ExecutionContextBase> Input { get; } = new Step(40);
+        public InstructionBase<int, ExecutionContextBase> Output { get; }
+
+        public ComposedProcess()
+        {
+            Add(Input);
+            Output = Append(Input, source => new Step(2, source));
+        }
+    }
+
+    private class Step : InstructionBase<int, ExecutionContextBase>
     {
         private readonly int _value;
-        private readonly IReadOnlyList<IInstruction<int, ExecutionContextBase>> _dependencies;
+        private readonly IReadOnlyList<InstructionBase<int, ExecutionContextBase>> _dependencies;
 
-        public Guid Id { get; init; } = Guid.NewGuid();
-
-        public IReadOnlyList<IInstruction> Dependencies => _dependencies;
-
-        public Step(int value, params IInstruction<int, ExecutionContextBase>[] dependencies)
+        public Step(int value, params InstructionBase<int, ExecutionContextBase>[] dependencies) : base(dependencies)
         {
             _value = value;
             _dependencies = Array.AsReadOnly(dependencies.ToArray());
         }
 
-        public IOperationInstance<int> GetTypedOperation(ExecutionContextBase context)
+        protected override OperationInstanceBase<int> CreateOperation(
+            ExecutionContextBase context, InstructionInputs<ExecutionContextBase> inputs)
         {
-            return context.GetOrAddOperation(this, () =>
+            var operations = _dependencies.Select(dependency => inputs.GetOperation(dependency)).ToArray();
+            return new TestOperation(context, async token =>
             {
-                var operations = _dependencies.Select(dependency => dependency.GetTypedOperation(context)).ToArray();
-                return new TestOperation(context, async token =>
-                {
-                    var results = await Task.WhenAll(operations.Select(operation => operation.Promise().WaitAsync(token)));
-                    return new ImmediateResult<int>(_value + results.Sum(result => result.GetResult()));
-                });
+                var results = await Task.WhenAll(operations.Select(operation => operation.Promise().WaitAsync(token)));
+                return new ImmediateResult<int>(_value + results.Sum(result => result.GetResult()));
             });
         }
-
-        public IOperationInstance GetOperation(ExecutionContextBase context) => GetTypedOperation(context);
     }
 
-    private sealed class EqualStep(int value, params IInstruction<int, ExecutionContextBase>[] dependencies)
+    private sealed class EqualStep(int value, params InstructionBase<int, ExecutionContextBase>[] dependencies)
         : Step(value, dependencies)
     {
         public override bool Equals(object? obj) => obj is EqualStep;
@@ -576,71 +621,55 @@ public class ProcessTests
     }
 
     private sealed class PendingInstruction(Task<IOperationResult<int>> completion)
-        : IInstruction<int, ExecutionContextBase>
+        : InstructionBase<int, ExecutionContextBase>
     {
-        public Guid Id { get; } = Guid.NewGuid();
-
-        public IReadOnlyList<IInstruction> Dependencies => Array.Empty<IInstruction>();
-
-        public IOperationInstance<int> GetTypedOperation(ExecutionContextBase context)
-            => context.GetOrAddOperation(this, () => new TestOperation(context, token => completion.WaitAsync(token)));
-
-        public IOperationInstance GetOperation(ExecutionContextBase context) => GetTypedOperation(context);
+        protected override OperationInstanceBase<int> CreateOperation(
+            ExecutionContextBase context, InstructionInputs<ExecutionContextBase> inputs) =>
+            new TestOperation(context, token => completion.WaitAsync(token));
     }
 
     private sealed class RegistrationCallbackInstruction(Action onRegistration)
-        : IInstruction<int, ExecutionContextBase>
+        : InstructionBase<int, ExecutionContextBase>
     {
-        public Guid Id { get; } = Guid.NewGuid();
-
-        public IReadOnlyList<IInstruction> Dependencies => Array.Empty<IInstruction>();
-
-        public IOperationInstance<int> GetTypedOperation(ExecutionContextBase context)
+        protected override OperationInstanceBase<int> CreateOperation(
+            ExecutionContextBase context, InstructionInputs<ExecutionContextBase> inputs)
         {
-            return context.GetOrAddOperation(this, () =>
-            {
-                onRegistration();
-                return new TestOperation(context,
-                    _ => Task.FromResult<IOperationResult<int>>(new ImmediateResult<int>(42)));
-            });
+            onRegistration();
+            return new TestOperation(context,
+                _ => Task.FromResult<IOperationResult<int>>(new ImmediateResult<int>(42)));
         }
-
-        public IOperationInstance GetOperation(ExecutionContextBase context) => GetTypedOperation(context);
     }
 
     private sealed class SpecializedContext : ExecutionContextBase
     {
     }
 
-    private sealed class SpecializedInstruction : IInstruction<SpecializedContext>
+    private sealed class SpecializedInstruction : InstructionBase<SpecializedContext>
     {
-        public Guid Id { get; } = Guid.NewGuid();
-
-        public IReadOnlyList<IInstruction> Dependencies => Array.Empty<IInstruction>();
-
-        public IOperationInstance GetOperation(SpecializedContext context) =>
+        protected override OperationInstanceBase CreateOperation(
+            SpecializedContext context, InstructionInputs<SpecializedContext> inputs) =>
             throw new InvalidOperationException("Incompatible instruction must not register.");
     }
 
-    private sealed class MalformedInstruction : IInstruction<ExecutionContextBase>
+    private sealed class MalformedInstruction : InstructionBase<ExecutionContextBase>
     {
-        public Guid Id { get; } = Guid.NewGuid();
+        public IReadOnlyList<InstructionBase> DeclaredDependencies { get; set; } = Array.Empty<InstructionBase>();
+        public override IReadOnlyList<InstructionBase> Dependencies => DeclaredDependencies;
 
-        public IReadOnlyList<IInstruction> Dependencies { get; set; } = Array.Empty<IInstruction>();
-
-        public IOperationInstance GetOperation(ExecutionContextBase context)
+        protected override OperationInstanceBase CreateOperation(
+            ExecutionContextBase context, InstructionInputs<ExecutionContextBase> inputs)
             => throw new InvalidOperationException("Malformed instruction must not execute.");
     }
 
     private sealed class TestOperation(
-        IExecutionContext context, Func<CancellationToken, Task<IOperationResult<int>>> core)
+        ExecutionContextBase context, Func<CancellationToken, Task<IOperationResult<int>>> core)
         : OperationInstanceBase<int>(context)
     {
         private int _invocationCount;
 
         public int InvocationCount => Volatile.Read(ref _invocationCount);
 
-        protected override Task<IOperationResult<int>> ExecuteCoreAsync(CancellationToken cancellationToken)
+        protected override Task<IOperationResult<int>> ExecuteResultAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _invocationCount);
             return core(cancellationToken);

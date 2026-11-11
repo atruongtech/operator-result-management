@@ -26,7 +26,7 @@ public class DistributeInstructionTests
         context.Register(process);
         var operation = instruction.GetTypedOperation(context);
 
-        Assert.Equal(new IInstruction[] { scalar, list }, instruction.Dependencies);
+        Assert.Equal(new InstructionBase[] { scalar, list }, instruction.Dependencies);
         Assert.Equal(3, context.Operations.Count);
         Assert.Same(operation, instruction.GetOperation(context));
         Assert.False(operation.Promise().IsCompleted);
@@ -105,7 +105,7 @@ public class DistributeInstructionTests
     {
         var scalar = new ConstantInstruction<int>(1);
         var list = new ConstantInstruction<ImmutableList<int>>([]);
-        IReadOnlyList<IInstruction>[] invalidInputs =
+        IReadOnlyList<InstructionBase>[] invalidInputs =
         [
             [],
             [scalar],
@@ -128,35 +128,26 @@ public class DistributeInstructionTests
     }
 
     private sealed class ConstantInstruction<TResult>(TResult value)
-        : IInstruction<TResult, NumberPipelineExecutionContext>
+        : InstructionBase<TResult, NumberPipelineExecutionContext>
     {
-        public Guid Id { get; } = Guid.NewGuid();
-        public IReadOnlyList<IInstruction> Dependencies => [];
-
-        public IOperationInstance<TResult> GetTypedOperation(NumberPipelineExecutionContext context) =>
-            context.GetOrAddOperation(this, () => new ConstantOperation<TResult>(context, value));
-
-        public IOperationInstance GetOperation(NumberPipelineExecutionContext context) =>
-            GetTypedOperation(context);
+        protected override OperationInstanceBase<TResult> CreateOperation(
+            NumberPipelineExecutionContext context, InstructionInputs<NumberPipelineExecutionContext> inputs) =>
+            new ConstantOperation<TResult>(context, value);
     }
 
     private sealed class ConstantOperation<TResult>(NumberPipelineExecutionContext context, TResult value)
         : OperationInstanceBase<TResult>(context)
     {
-        protected override Task<IOperationResult<TResult>> ExecuteCoreAsync(CancellationToken cancellationToken) =>
+        protected override Task<IOperationResult<TResult>> ExecuteResultAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IOperationResult<TResult>>(new ImmediateResult<TResult>(value));
     }
 
     private sealed class OtherContext : ExecutionContextBase;
 
-    private sealed class OtherContextInstruction<TResult> : IInstruction<TResult, OtherContext>
+    private sealed class OtherContextInstruction<TResult> : InstructionBase<TResult, OtherContext>
     {
-        public Guid Id { get; } = Guid.NewGuid();
-        public IReadOnlyList<IInstruction> Dependencies => [];
-
-        public IOperationInstance<TResult> GetTypedOperation(OtherContext context) =>
+        protected override OperationInstanceBase<TResult> CreateOperation(
+            OtherContext context, InstructionInputs<OtherContext> inputs) =>
             throw new NotSupportedException("This instruction is only used for binding.");
-
-        public IOperationInstance GetOperation(OtherContext context) => GetTypedOperation(context);
     }
 }

@@ -7,7 +7,7 @@ namespace configurable_number_pipeline_poc;
 
 public class InputScripts
 {
-    public static void OutputExistingProcess(IProcess process)
+    public static void OutputExistingProcess(ProcessBase process)
     {
         var counter = 0;
 
@@ -38,7 +38,7 @@ public class InputScripts
         };
     }
 
-    public static ImmutableList<IInstruction> GetInstructionSelection(IProcess currentProcess)
+    public static ImmutableList<InstructionBase> GetInstructionSelection(ProcessBase currentProcess)
     {
         List<int> selectedIndicies = [];
         OutputExistingProcess(currentProcess);
@@ -68,9 +68,9 @@ public class InputScripts
         return input;
     }
 
-    public static IEnumerable<IInstruction<TContext>> SelectBinding<TContext>(
-        ImmutableList<BindingResponse<TContext>> responses, IProcess process)
-        where TContext : IExecutionContext
+    public static IEnumerable<InstructionBase<TContext>> SelectBinding<TContext>(
+        ImmutableList<BindingResponse<TContext>> responses, ProcessBase process)
+        where TContext : ExecutionContextBase
     {
         var readyResponses = responses.OfType<ReadyResponse<TContext>>().ToList();
         if (readyResponses.Count == 0)
@@ -80,7 +80,7 @@ public class InputScripts
         }
 
         var instructions = process.Instructions;
-        var instructionNumbers = new Dictionary<IInstruction, int>(ReferenceEqualityComparer.Instance);
+        var instructionNumbers = new Dictionary<InstructionBase, int>(ReferenceEqualityComparer.Instance);
         for (var i = 0; i < instructions.Count; i++)
         {
             instructionNumbers.Add(instructions[i], i + 1);

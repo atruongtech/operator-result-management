@@ -28,7 +28,7 @@ public class ConditionalInstructionTests
             }, [input]);
 
         Assert.Empty(children);
-        IInstruction<TestContext> instruction = conditional;
+        InstructionBase<TestContext> instruction = conditional;
         var operation = context.Register(instruction);
         Assert.Same(operation, conditional.GetOperation(context));
         Assert.Same(context, Assert.Single(parents));
@@ -76,7 +76,7 @@ public class ConditionalInstructionTests
         var child = Assert.Single(conditional.Contexts);
         var localOperation = local.GetTypedOperation(child);
 
-        Assert.Equal(new IInstruction[] { condition, conditional }, process.Instructions);
+        Assert.Equal(new InstructionBase[] { condition, conditional }, process.Instructions);
         Assert.Equal(2, context.Operations.Count);
         Assert.False(context.Operations.ContainsKey(local));
         Assert.Single(child.Operations);
@@ -518,15 +518,15 @@ public class ConditionalInstructionTests
         Assert.Throws<ArgumentNullException>(() =>
             new ConditionalInstruction<TestContext>(condition, Body(), factory, [null!]));
         var input = new ValueInstruction<int>(42);
-        IInstruction<TestContext>[] inputs = [input, input, condition];
+        InstructionBase<TestContext>[] inputs = [input, input, condition];
         var conditional = new ConditionalInstruction<TestContext>(condition, Body(), factory, inputs);
         inputs[0] = new ValueInstruction<int>(9);
 
-        Assert.Equal(new IInstruction[] { condition, input }, conditional.Dependencies);
+        Assert.Equal(new InstructionBase[] { condition, input }, conditional.Dependencies);
         Assert.Throws<ArgumentNullException>(() => conditional.GetOperation(null!));
     }
 
-    private static ProcessBase<TestContext> Body(params IInstruction<TestContext>[] instructions)
+    private static ProcessBase<TestContext> Body(params InstructionBase<TestContext>[] instructions)
     {
         var body = new ProcessBase<TestContext>();
         foreach (var instruction in instructions)
@@ -541,9 +541,9 @@ public class ConditionalInstructionTests
     }
 
     private sealed class Conditional(
-        IInstruction<bool, TestContext> condition,
-        IProcess<TestContext> body,
-        IEnumerable<IInstruction<TestContext>>? outerInputs = null)
+        InstructionBase<bool, TestContext> condition,
+        ProcessBase<TestContext> body,
+        IEnumerable<InstructionBase<TestContext>>? outerInputs = null)
         : ConditionalInstruction<TestContext>(
             condition, body, parent => new TestContext(parent.CancellationToken, parent.Service), outerInputs)
     {
@@ -557,66 +557,54 @@ public class ConditionalInstructionTests
         }
     }
 
-    private sealed class ValueInstruction<T>(T value) : IInstruction<T, TestContext>
+    private sealed class ValueInstruction<T>(T value) : InstructionBase<T, TestContext>
     {
-        public Guid Id { get; } = Guid.NewGuid();
-        public IReadOnlyList<IInstruction> Dependencies => [];
         public T Value { get; set; } = value;
         public Func<CancellationToken, Task<T>>? Work { get; set; }
         public bool FailRegistration { get; set; }
 
-        public IOperationInstance<T> GetTypedOperation(TestContext context) =>
-            context.GetOrAddOperation(this, () =>
-            {
-                if (FailRegistration)
-                    throw new InvalidOperationException("Registration failed.");
-                var captured = Value;
-                return new ValueOperation<T>(context, Work ?? (_ => Task.FromResult(captured)));
-            });
-
-        public IOperationInstance GetOperation(TestContext context) => GetTypedOperation(context);
+        protected override OperationInstanceBase<T> CreateOperation(
+            TestContext context, InstructionInputs<TestContext> inputs)
+        {
+            if (FailRegistration)
+                throw new InvalidOperationException("Registration failed.");
+            var captured = Value;
+            return new ValueOperation<T>(context, Work ?? (_ => Task.FromResult(captured)));
+        }
     }
 
-    private sealed class SumInstruction(params IInstruction<int, TestContext>[] inputs)
-        : IInstruction<int, TestContext>
+    private sealed class SumInstruction(params InstructionBase<int, TestContext>[] inputs)
+        : InstructionBase<int, TestContext>
     {
-        public Guid Id { get; } = Guid.NewGuid();
-        public IInstruction<int, TestContext>[] Inputs { get; set; } = inputs;
-        public IReadOnlyList<IInstruction> Dependencies => Inputs;
+        public InstructionBase<int, TestContext>[] Inputs { get; set; } = inputs;
+        public override IReadOnlyList<InstructionBase> Dependencies => Inputs;
 
-        public IOperationInstance<int> GetTypedOperation(TestContext context) =>
-            context.GetOrAddOperation(this, () =>
+        protected override OperationInstanceBase<int> CreateOperation(
+            TestContext context, InstructionInputs<TestContext> inputs)
+        {
+            var operations = Inputs.Select(input => inputs.GetOperation(input)).ToArray();
+            return new ValueOperation<int>(context, async token =>
             {
-                var operations = Inputs.Select(input => input.GetTypedOperation(context)).ToArray();
-                return new ValueOperation<int>(context, async token =>
-                {
-                    var sum = 0;
-                    foreach (var operation in operations)
-                        sum += (await operation.Promise().WaitAsync(token)).GetResult();
-                    return sum;
-                });
+                var sum = 0;
+                foreach (var operation in operations)
+                    sum += (await operation.Promise().WaitAsync(token)).GetResult();
+                return sum;
             });
-
-        public IOperationInstance GetOperation(TestContext context) => GetTypedOperation(context);
+        }
     }
 
-    private sealed class AfterInstruction(Conditional conditional) : IInstruction<int, TestContext>
+    private sealed class AfterInstruction(Conditional conditional) : InstructionBase<int, TestContext>(conditional)
     {
-        public Guid Id { get; } = Guid.NewGuid();
-        public IReadOnlyList<IInstruction> Dependencies => [conditional];
-
-        public IOperationInstance<int> GetTypedOperation(TestContext context) =>
-            context.GetOrAddOperation(this, () =>
+        protected override OperationInstanceBase<int> CreateOperation(
+            TestContext context, InstructionInputs<TestContext> inputs)
+        {
+            var operation = inputs.GetOperation(conditional);
+            return new ValueOperation<int>(context, async token =>
             {
-                var operation = conditional.GetOperation(context);
-                return new ValueOperation<int>(context, async token =>
-                {
-                    await operation.Completion.WaitAsync(token);
-                    return 1;
-                });
+                await operation.Completion.WaitAsync(token);
+                return 1;
             });
-
-        public IOperationInstance GetOperation(TestContext context) => GetTypedOperation(context);
+        }
     }
 
     private sealed class ValueOperation<T>(TestContext context, Func<CancellationToken, Task<T>> work)
@@ -624,7 +612,7 @@ public class ConditionalInstructionTests
     {
         public int InvocationCount { get; private set; }
 
-        protected override async Task<IOperationResult<T>> ExecuteCoreAsync(CancellationToken cancellationToken)
+        protected override async Task<IOperationResult<T>> ExecuteResultAsync(CancellationToken cancellationToken)
         {
             InvocationCount++;
             return new ImmediateResult<T>(await work(cancellationToken));

@@ -13,7 +13,7 @@ public class OperationInstanceBaseTests
         var completion = NewCompletionSource<IOperationResult<int>>();
         var operation = new TestOperation(() => completion.Task);
         var promise = operation.Promise();
-        IOperationInstance untyped = operation;
+        OperationInstanceBase untyped = operation;
         var observedCompletion = untyped.Completion;
 
         Assert.Same(promise, operation.Promise());
@@ -46,11 +46,12 @@ public class OperationInstanceBaseTests
         var start = NewCompletionSource<bool>();
         var completion = NewCompletionSource<IOperationResult<int>>();
         var operation = new TestOperation(() => completion.Task);
+        OperationInstanceBase untyped = operation;
         var returnedTasks = new Task[64];
         var callers = Enumerable.Range(0, returnedTasks.Length).Select(async index =>
         {
             await start.Task;
-            returnedTasks[index] = operation.Execute();
+            returnedTasks[index] = index % 2 == 0 ? operation.Execute() : untyped.Execute();
         }).ToArray();
 
         start.SetResult(true);
@@ -230,7 +231,7 @@ public class OperationInstanceBaseTests
     {
         var upstream = new TestOperation(() =>
             Task.FromResult<IOperationResult<int>>(new ImmediateResult<int>(42)));
-        IOperationInstance dependency = upstream;
+        OperationInstanceBase dependency = upstream;
         var downstream = new TestOperation(async () =>
         {
             await dependency.Completion;
@@ -257,7 +258,7 @@ public class OperationInstanceBaseTests
 
         public int InvocationCount => Volatile.Read(ref _invocationCount);
 
-        protected override Task<IOperationResult<int>> ExecuteCoreAsync(CancellationToken cancellationToken)
+        protected override Task<IOperationResult<int>> ExecuteResultAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _invocationCount);
             return core();

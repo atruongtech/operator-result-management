@@ -6,7 +6,7 @@ namespace configurable_number_pipeline_poc;
 
 public class DirectInputInstructionFactory : IInstructionFactory<NumberPipelineExecutionContext>
 {
-    public BindingResponse<NumberPipelineExecutionContext> BindInputs(IReadOnlyList<IInstruction> inputs)
+    public BindingResponse<NumberPipelineExecutionContext> BindInputs(IReadOnlyList<InstructionBase> inputs)
     {
         if (inputs.Count != 0)
             return new FailedResponse<NumberPipelineExecutionContext>("Direct input instruction takes no inputs.", typeof(DirectInputInstruction));

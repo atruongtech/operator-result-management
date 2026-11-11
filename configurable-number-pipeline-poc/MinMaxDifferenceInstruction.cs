@@ -8,44 +8,35 @@ namespace configurable_number_pipeline_poc;
 /// Produces the largest value minus the smallest value in an immutable integer list.
 /// Empty input fails with ArgumentException; a difference outside int range overflows.
 /// </summary>
-public sealed class MinMaxDifferenceInstruction : IInstruction<int, NumberPipelineExecutionContext>
+public sealed class MinMaxDifferenceInstruction : InstructionBase<int, NumberPipelineExecutionContext>
 {
-    private readonly IInstruction<ImmutableList<int>, NumberPipelineExecutionContext> _input;
-
-    public Guid Id { get; } = Guid.NewGuid();
-
-    public IReadOnlyList<IInstruction> Dependencies { get; }
+    private readonly InstructionBase<ImmutableList<int>, NumberPipelineExecutionContext> _input;
 
     public MinMaxDifferenceInstruction(
-        IInstruction<ImmutableList<int>, NumberPipelineExecutionContext> input)
+        InstructionBase<ImmutableList<int>, NumberPipelineExecutionContext> input) : base(input)
     {
-        ArgumentNullException.ThrowIfNull(input);
         _input = input;
-        Dependencies = Array.AsReadOnly<IInstruction>([input]);
     }
 
-    public IOperationInstance<int> GetTypedOperation(NumberPipelineExecutionContext context) =>
-        context.GetOrAddOperation(this,
-            () => new MinMaxDifferenceOperation(context, _input.GetTypedOperation(context)));
-
-    public IOperationInstance GetOperation(NumberPipelineExecutionContext context) =>
-        GetTypedOperation(context);
+    protected override OperationInstanceBase<int> CreateOperation(
+        NumberPipelineExecutionContext context, InstructionInputs<NumberPipelineExecutionContext> inputs) =>
+        new MinMaxDifferenceOperation(context, inputs.GetOperation(_input));
 }
 
 public sealed class MinMaxDifferenceOperation : OperationInstanceBase<int>
 {
     private readonly NumberPipelineExecutionContext _context;
-    private readonly IOperationInstance<ImmutableList<int>> _input;
+    private readonly OperationInstanceBase<ImmutableList<int>> _input;
 
     public MinMaxDifferenceOperation(
-        NumberPipelineExecutionContext context, IOperationInstance<ImmutableList<int>> input) : base(context)
+        NumberPipelineExecutionContext context, OperationInstanceBase<ImmutableList<int>> input) : base(context)
     {
         ArgumentNullException.ThrowIfNull(input);
         _context = context;
         _input = input;
     }
 
-    protected override async Task<IOperationResult<int>> ExecuteCoreAsync(
+    protected override async Task<IOperationResult<int>> ExecuteResultAsync(
         CancellationToken cancellationToken)
     {
         var result = await _input.Promise().WaitAsync(cancellationToken);

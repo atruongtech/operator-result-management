@@ -4,46 +4,33 @@ using operator_result_management.Basic;
 
 namespace configurable_number_pipeline_poc;
 
-public class UserInputMultiplyInstruction : IInstruction<int, NumberPipelineExecutionContext>
+public class UserInputMultiplyInstruction : InstructionBase<int, NumberPipelineExecutionContext>
 {
-    private readonly IInstruction<int, NumberPipelineExecutionContext> _input;
+    private readonly InstructionBase<int, NumberPipelineExecutionContext> _input;
 
-    public Guid Id { get; } = Guid.NewGuid();
-
-    public IReadOnlyList<IInstruction> Dependencies { get; }
-
-    public UserInputMultiplyInstruction(IInstruction<int, NumberPipelineExecutionContext> input)
+    public UserInputMultiplyInstruction(InstructionBase<int, NumberPipelineExecutionContext> input) : base(input)
     {
-        ArgumentNullException.ThrowIfNull(input);
         _input = input;
-        Dependencies = Array.AsReadOnly<IInstruction>([input]);
     }
 
-    public IOperationInstance GetOperation(NumberPipelineExecutionContext context)
-    {
-        return GetTypedOperation(context);
-    }
-
-    public IOperationInstance<int> GetTypedOperation(NumberPipelineExecutionContext context)
-    {
-        return context.GetOrAddOperation(this,
-            () => new UserInputMultiplyOperation(context, _input.GetTypedOperation(context)));
-    }
+    protected override OperationInstanceBase<int> CreateOperation(
+        NumberPipelineExecutionContext context, InstructionInputs<NumberPipelineExecutionContext> inputs) =>
+        new UserInputMultiplyOperation(context, inputs.GetOperation(_input));
 }
 
 public class UserInputMultiplyOperation : OperationInstanceBase<int>
 {
     private readonly NumberPipelineExecutionContext _context;
-    private readonly IOperationInstance<int> _input;
+    private readonly OperationInstanceBase<int> _input;
 
-    public UserInputMultiplyOperation(NumberPipelineExecutionContext context, IOperationInstance<int> input)
+    public UserInputMultiplyOperation(NumberPipelineExecutionContext context, OperationInstanceBase<int> input)
         : base(context)
     {
         _context = context;
         _input = input;
     }
 
-    protected override async Task<IOperationResult<int>> ExecuteCoreAsync(CancellationToken cancellationToken)
+    protected override async Task<IOperationResult<int>> ExecuteResultAsync(CancellationToken cancellationToken)
     {
         var toMultiply = await _input.Promise().WaitAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
