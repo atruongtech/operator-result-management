@@ -3,13 +3,13 @@ using configurable_number_pipeline_poc;
 using operator_result_management;
 using operator_result_management.Basic;
 
-ImmutableList<IInstructionFactory<NumberPipelineExecutionContext>> factories =
+ImmutableList<InstructionFactory<NumberPipelineExecutionContext>> factories =
 [
-    new DirectInputInstructionFactory(),
-    new MinMaxDifferenceInstructionFactory(),
-    new UserInputMultiplyInstructionFactory(),
-    new FactorInstructionFactory(),
-    new DistributeInstructionFactory(),
+    DirectInputInstructionFactory.Create(),
+    MinMaxDifferenceInstructionFactory.Create(),
+    UserInputMultiplyInstructionFactory.Create(),
+    FactorInstructionFactory.Create(),
+    DistributeInstructionFactory.Create(),
 ];
 var inputInstruction = new DirectInputInstruction();
 var process = new ProcessBase<NumberPipelineExecutionContext>();

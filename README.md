@@ -30,6 +30,75 @@ Instructions can be immutable or mutable. The context preserves instruction-to-o
 
 Most types use the `operator_result_management` namespace. Both forms of `OperationInstanceBase` and `ImmediateResult<TResult>` use `operator_result_management.Basic`.
 
+### Instruction factories: typed input schemas
+
+`InstructionFactory<TContext>` binds candidate instruction references before a
+client chooses which instruction to create. Use
+`operator_result_management.Basic.InstructionFactory.For<TContext>()` to declare
+inputs instead of implementing count/type checks and constructing binding
+responses manually:
+
+```csharp
+var schema = InstructionFactory.For<ExecutionContextBase>();
+var sourceKey = schema.Input<int>("source");
+var factory = schema.Creates(arguments => new AddInstruction(arguments.Get(sourceKey), 10));
+
+var response = factory.BindInputs(selectedInstructions);
+if (response is ReadyResponse<ExecutionContextBase> ready)
+{
+    InstructionBase<ExecutionContextBase> instruction = ready.Create();
+    process.Add(instruction);
+}
+```
+
+Declare any number of fixed inputs, including different result types. Each
+`Input<TResult>` returns a schema-owned `InstructionCreationParameterKey<TResult, TContext>`;
+`InstructionCreationArguments<TContext>.Get(key)`
+returns `InstructionBase<TResult, TContext>` without client casts or arity-specific
+delegates. Keys from another schema are rejected.
+
+For a variable number of inputs, declare one trailing group:
+
+```csharp
+var schema = InstructionFactory.For<ExecutionContextBase>();
+var termsKey = schema.Many<int>("terms", minimumCount: 1);
+var factory = schema.Creates(arguments => new SumInstruction(arguments.Get(termsKey)));
+```
+
+Here `SumInstruction` is an application-defined instruction accepting an
+`IReadOnlyList<InstructionBase<int, ExecutionContextBase>>` and declaring those
+references as dependencies in order. `Many` returns a
+`InstructionCreationParameterGroupKey<TResult, TContext>` and defaults to a minimum of zero.
+Fixed inputs precede the group; only one group is allowed, and nothing may be
+declared after it. Parameter names must be nonblank and unique within the schema.
+Each group member appears in `ReadyResponse.Bindings` under the group's name, in
+candidate order.
+
+`Creates` infers the concrete instruction type and freezes the schema. Construct
+schemas on one thread; completed factories may be reused, but constructor delegates
+and mutable instruction definitions remain the client's responsibility.
+Binding validates input count, result types, and context compatibility, returning
+`FailedResponse<TContext>` with a diagnostic for invalid candidates, including null
+entries. A null candidate collection is an argument error. Successful binding
+captures an immutable snapshot of the candidate references, not their definitions.
+Later edits to the caller's collection or another binding do not affect it.
+
+Binding never invokes the constructor or registers operations. Each `ready.Create()`
+invokes the constructor with the captured inputs. The result must have the exact
+inferred instruction type and declare exactly the bound dependencies by reference
+and order, including duplicates. A mismatch or foreign key is an
+`InvalidOperationException` indicating a factory-author error; constructor
+exceptions propagate. Registration and execution still happen separately.
+
+`InstructionFactory<TContext>` is sealed and has no public constructor. Clients
+declare parameters and provide instruction construction through the schema;
+binding validation and response assembly remain library-owned.
+
+**Breaking API change:** `IInstructionFactory<TContext>` has been removed. Replace
+interface-based registries with `InstructionFactory<TContext>` collections and
+custom factory implementations with schema-producing methods or properties.
+The existing binding response contract is unchanged.
+
 ### Process: membership, not scheduling
 
 `ProcessBase<TContext>.Add` discovers an instruction's transitive dependencies, validates context compatibility and cycles, and adds distinct instruction objects in dependency-first insertion order. Adding the same object again does not duplicate it.
@@ -338,7 +407,7 @@ The mapping retains instruction objects while the context or a returned mapping 
 
 ## Context-typed instruction factories
 
-`IInstructionFactory<TContext>` binds candidate inputs and returns a
+`InstructionFactory<TContext>` binds candidate inputs and returns a
 `BindingResponse<TContext>`. A successful `ReadyResponse<TContext>` exposes a
 `Create` delegate returning `InstructionBase<TContext>`, so callers can add the
 constructed instruction directly to `ProcessBase<TContext>` without casting.
@@ -350,8 +419,9 @@ required input count, result types, and context compatibility at binding time.
 The factory registry and selection helper must preserve `TContext` through to
 creation; different result types can share the same context-typed registry.
 
-Consumers must
-specify the execution context type when implementing factories or handling responses.
+Consumers specify the execution context type when declaring factory schemas,
+storing concrete factories, or handling responses. Factory collections can mix
+instruction and result types while preserving one execution context type.
 
 ## Repository example
 
