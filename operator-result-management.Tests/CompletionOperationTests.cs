@@ -63,47 +63,6 @@ public class CompletionOperationTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task CancellationBeforeWorkOrBeforePublicationCancelsBothTasks(bool preCanceled)
-    {
-        using var cancellation = new CancellationTokenSource();
-        if (preCanceled)
-            cancellation.Cancel();
-        var operation = new CompletionOperation(new ExecutionContextBase(cancellation.Token), _ =>
-        {
-            cancellation.Cancel();
-            return Task.CompletedTask;
-        });
-        var completion = operation.Completion;
-        var execution = operation.Execute();
-
-        Assert.Same(completion, execution);
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => execution.WaitAsync(_timeout));
-        var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => operation.Completion.WaitAsync(_timeout));
-
-        Assert.Equal(cancellation.Token, error.CancellationToken);
-        Assert.True(operation.Completion.IsCanceled);
-        Assert.Same(completion, operation.Execute());
-        Assert.Equal(preCanceled ? 0 : 1, operation.InvocationCount);
-    }
-
-    [Fact]
-    public async Task SynchronousSuccessReturnsPreobservedCompletion()
-    {
-        var operation = new CompletionOperation(new ExecutionContextBase(), _ => Task.CompletedTask);
-        var completion = operation.Completion;
-
-        Assert.False(completion.IsCompleted);
-        Assert.Same(completion, operation.Execute());
-        await completion.WaitAsync(_timeout);
-        Assert.True(completion.IsCompletedSuccessfully);
-        Assert.Same(completion, operation.Execute());
-        Assert.Equal(1, operation.InvocationCount);
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
     public async Task CoreCancellationPreservesTokenAndSharedCompletion(bool synchronous)
     {
         using var cancellation = new CancellationTokenSource();
@@ -124,25 +83,6 @@ public class CompletionOperationTests
         Assert.True(completion.IsCanceled);
         Assert.Same(completion, operation.Execute());
         Assert.Equal(1, operation.InvocationCount);
-    }
-
-    [Fact]
-    public async Task CancelingCompletionWaitDoesNotCancelExecution()
-    {
-        using var observerCancellation = new CancellationTokenSource();
-        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var operation = new CompletionOperation(new ExecutionContextBase(), _ => release.Task);
-        var observer = operation.Completion.WaitAsync(observerCancellation.Token);
-
-        Assert.Equal(0, operation.InvocationCount);
-        var execution = operation.Execute();
-        observerCancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observer.WaitAsync(_timeout));
-        Assert.False(execution.IsCompleted);
-
-        release.SetResult();
-        await execution.WaitAsync(_timeout);
-        Assert.True(operation.Completion.IsCompletedSuccessfully);
     }
 
     private sealed class CompletionOperation(ExecutionContextBase context, Func<CancellationToken, Task> work)

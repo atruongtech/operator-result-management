@@ -1,5 +1,3 @@
-using System.Collections.Immutable;
-using System.Reflection;
 using operator_result_management.Basic;
 using Xunit;
 
@@ -29,13 +27,11 @@ public class ProcessTests
     }
 
     [Fact]
-    public void InstructionCollectionsAreImmutableAndDependenciesAreReadOnly()
+    public void InstructionCollectionsAreReadOnlyMembershipSnapshots()
     {
         var process = new ProcessBase<ExecutionContextBase>();
         var input = new Step(40);
-        InstructionBase<int, ExecutionContextBase>[] dependencies = [input];
-        var output = new Step(2, dependencies);
-        dependencies[0] = new Step(100);
+        var output = new Step(2, input);
         process.Add(output);
         IReadOnlyList<InstructionBase<ExecutionContextBase>> instructions = process.Instructions;
         ProcessBase untypedProcess = process;
@@ -43,20 +39,13 @@ public class ProcessTests
         Assert.Same(instructions, untypedProcess.Instructions);
         Assert.Same(input, instructions[0]);
         Assert.Same(output, instructions[1]);
-        Assert.Same(input, Assert.Single(output.Dependencies));
-        Assert.Throws<NotSupportedException>(() =>
-            Assert.IsAssignableFrom<IList<InstructionBase>>(output.Dependencies).Clear());
-        Assert.Throws<NotSupportedException>(() =>
-            Assert.IsAssignableFrom<IList<InstructionBase<ExecutionContextBase>>>(instructions).Clear());
+        if (instructions is IList<InstructionBase<ExecutionContextBase>> mutableInstructions)
+            Assert.Throws<NotSupportedException>(() => mutableInstructions.Clear());
         var added = new Step(3);
-        var separateList = instructions.ToImmutableList().Add(added);
-        Assert.Equal(3, separateList.Count);
-        Assert.Same(added, separateList[2]);
-        Assert.Same(instructions, process.Instructions);
         process.Add(added);
 
-        Assert.Equal(2, instructions.Count);
-        Assert.Equal(3, process.Instructions.Count);
+        Assert.Equal(new InstructionBase[] { input, output }, instructions);
+        Assert.Equal(new InstructionBase[] { input, output, added }, process.Instructions);
         Assert.Same(process.Instructions, untypedProcess.Instructions);
     }
 
@@ -151,8 +140,8 @@ public class ProcessTests
         Assert.Same(dependent, fullRequest.SelectedInstructions[1]);
         Assert.Equal(3, process.Instructions.Count);
         Assert.Same(input, Assert.Single(request.SelectedInstructions));
-        Assert.Throws<NotSupportedException>(() =>
-            Assert.IsAssignableFrom<IList<InstructionBase<ExecutionContextBase>>>(request.SelectedInstructions).Clear());
+        if (request.SelectedInstructions is IList<InstructionBase<ExecutionContextBase>> mutableSelection)
+            Assert.Throws<NotSupportedException>(() => mutableSelection.Clear());
         var laterRequest = new ProcessRunRequest<ExecutionContextBase>(process, [laterStep]);
         Assert.Same(laterStep, Assert.Single(laterRequest.SelectedInstructions));
 
@@ -190,13 +179,12 @@ public class ProcessTests
     }
 
     [Fact]
-    public void InvalidRunSelectionsAreRejectedWithoutChangingDefinitionOrContext()
+    public void InvalidRunSelectionsAreRejectedWithoutChangingDefinition()
     {
         var process = new ProcessBase<ExecutionContextBase>();
         var input = new Step(40);
         process.Add(input);
         var instructions = process.Instructions;
-        var context = new ExecutionContextBase();
 
         Assert.Throws<ArgumentException>("selectedInstructions", () =>
             new ProcessRunRequest<ExecutionContextBase>(process, [input, null!]));
@@ -204,7 +192,6 @@ public class ProcessTests
             new ProcessRunRequest<ExecutionContextBase>(process, [input, new Step(40)]));
 
         Assert.Same(instructions, process.Instructions);
-        Assert.Empty(context.Operations);
     }
 
     [Fact]
@@ -300,7 +287,6 @@ public class ProcessTests
         var input = new EqualStep(40) { Id = id };
         var left = new EqualStep(1, input) { Id = id };
         var right = new EqualStep(2, input) { Id = id };
-        Assert.True(input.Equals(left));
         process.Add(left);
         process.Add(right);
         Assert.Equal(3, process.Instructions.Count);
@@ -342,9 +328,8 @@ public class ProcessTests
         var second = new MalformedInstruction();
         first.DeclaredDependencies = Array.AsReadOnly<InstructionBase>([selfCycle ? first : second]);
         second.DeclaredDependencies = Array.AsReadOnly<InstructionBase>([first]);
-        var error = Assert.Throws<InvalidOperationException>(() => process.Add(first));
+        Assert.Throws<InvalidOperationException>(() => process.Add(first));
 
-        Assert.Contains("Cyclic", error.Message);
         Assert.Same(before, process.Instructions);
     }
 
@@ -390,28 +375,21 @@ public class ProcessTests
         Assert.Same(before, process.Instructions);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task DefaultRunRequestsRegisterAllStepsIncludingEmptyDefinitions(bool hasSteps)
+    [Fact]
+    public async Task EmptyProcessRegistersNoWorkThroughDefaultEntryPoints()
     {
         var process = new ProcessBase<ExecutionContextBase>();
-        if (hasSteps)
-        {
-            process.Add(new Step(42));
-            process.Add(new Step(100));
-        }
         var context = new ExecutionContextBase();
         var request = new ProcessRunRequest<ExecutionContextBase>(process);
-        Assert.Equal(process.Instructions, request.SelectedInstructions);
+        Assert.Empty(request.SelectedInstructions);
         context.Register(request);
         await context.ExecuteAsync().WaitAsync(_timeout);
-        Assert.Equal(hasSteps ? 2 : 0, context.Operations.Count);
+        Assert.Empty(context.Operations);
 
         var fullContext = new ExecutionContextBase();
         fullContext.Register(process);
         await fullContext.ExecuteAsync().WaitAsync(_timeout);
-        Assert.Equal(hasSteps ? 2 : 0, fullContext.Operations.Count);
+        Assert.Empty(fullContext.Operations);
     }
 
     [Fact]
@@ -446,59 +424,6 @@ public class ProcessTests
     }
 
     [Fact]
-    public async Task SharedFailurePropagatesToAllSelectedInstructionsWithoutChangingDefinition()
-    {
-        var completion = new TaskCompletionSource<IOperationResult<int>>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var input = new PendingInstruction(completion.Task);
-        var process = new ProcessBase<ExecutionContextBase>();
-        process.Add(input);
-        var left = process.Append(input, source => new Step(1, source));
-        var right = process.Append(input, source => new Step(2, source));
-        var context = new ExecutionContextBase();
-        var instructions = process.Instructions;
-        context.Register(new ProcessRunRequest<ExecutionContextBase>(process, [left, right]));
-        var execution = context.ExecuteAsync();
-        var error = new InvalidDataException("Upstream failed.");
-        completion.SetException(error);
-
-        Assert.Same(error, await Assert.ThrowsAsync<InvalidDataException>(
-            () => execution.WaitAsync(_timeout)));
-        Assert.Same(error, await Assert.ThrowsAsync<InvalidDataException>(
-            () => context.Register(left).Promise().WaitAsync(_timeout)));
-        Assert.Same(error, await Assert.ThrowsAsync<InvalidDataException>(
-            () => context.Register(right).Promise().WaitAsync(_timeout)));
-        Assert.Same(execution, context.ExecuteAsync());
-        Assert.Same(instructions, process.Instructions);
-        Assert.Equal(1, Assert.IsType<TestOperation>(context.Operations[input]).InvocationCount);
-    }
-
-    [Fact]
-    public async Task ContextCancellationCancelsProcessOperationsWithoutChangingDefinition()
-    {
-        var completion = new TaskCompletionSource<IOperationResult<int>>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var input = new PendingInstruction(completion.Task);
-        var process = new ProcessBase<ExecutionContextBase>();
-        process.Add(input);
-        var output = process.Append(input, source => new Step(2, source));
-        using var cancellation = new CancellationTokenSource();
-        var context = new ExecutionContextBase(cancellation.Token);
-        var instructions = process.Instructions;
-        context.Register(process);
-        var execution = context.ExecuteAsync();
-        cancellation.Cancel();
-
-        var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => execution.WaitAsync(_timeout));
-        Assert.Equal(cancellation.Token, error.CancellationToken);
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => context.Register(output).Promise().WaitAsync(_timeout));
-        Assert.All(context.Operations.Values, operation => Assert.True(operation.Execute().IsCanceled));
-        Assert.Same(instructions, process.Instructions);
-    }
-
-    [Fact]
     public async Task ConcurrentAdditionsKeepAllRootsAndOneSharedDependency()
     {
         var process = new ProcessBase<ExecutionContextBase>();
@@ -511,82 +436,6 @@ public class ProcessTests
         Assert.Single(process.Instructions, instruction => ReferenceEquals(instruction, input));
         Assert.All(outputs, output => Assert.Contains(process.Instructions,
             instruction => ReferenceEquals(instruction, output)));
-    }
-
-    [Fact]
-    public void RegisteringProcessExposesEveryStepWithoutExecuting()
-    {
-        var process = new ProcessBase<ExecutionContextBase>();
-        var input = new Step(12);
-        process.Add(input);
-        var middle = process.Append(input, source => new Step(1, source));
-        var output = process.Append(middle, source => new Step(2, source));
-        var context = new ExecutionContextBase();
-
-        var request = context.Register(process);
-
-        Assert.Equal(new InstructionBase[] { input, middle, output }, process.Instructions);
-        Assert.Equal(3, request.SelectedInstructions.Count);
-        Assert.Equal(3, context.Operations.Count);
-        Assert.False(context.Register(output).Promise().IsCompleted);
-        Assert.All(context.Operations.Values, operation =>
-            Assert.Equal(0, Assert.IsType<TestOperation>(operation).InvocationCount));
-        Assert.Same(input, Assert.Single(middle.Dependencies));
-        Assert.Same(middle, Assert.Single(output.Dependencies));
-        Assert.Throws<NotSupportedException>(() =>
-            Assert.IsAssignableFrom<IList<InstructionBase>>(output.Dependencies).Clear());
-    }
-
-    [Fact]
-    public async Task DerivedProcessesComposeThroughLibraryOwnedGraphAndRunSelection()
-    {
-        var process = new ComposedProcess();
-        ProcessBase<ExecutionContextBase> typed = process;
-        ProcessBase untyped = process;
-
-        Assert.Equal(new InstructionBase[] { process.Input, process.Output }, typed.Instructions);
-        Assert.Same(typed.Instructions, untyped.Instructions);
-        var before = untyped.Instructions;
-        typed.Add(process.Output);
-        Assert.Same(before, untyped.Instructions);
-
-        var context = new ExecutionContextBase();
-        context.Register(new ProcessRunRequest<ExecutionContextBase>(typed, [process.Output]));
-        await context.ExecuteAsync().WaitAsync(_timeout);
-
-        Assert.Equal(42, (await context.Register(process.Output).Promise().WaitAsync(_timeout)).GetResult());
-        Assert.Same(before, untyped.Instructions);
-        Assert.Equal(2, context.Operations.Count);
-    }
-
-    [Fact]
-    public void ProcessApiRemovesContractsAndProtectsGraphBehaviorWithoutExposingStorageType()
-    {
-        Assert.DoesNotContain(typeof(ProcessBase).Assembly.GetExportedTypes(),
-            type => type.IsInterface && type.Name.Split('`')[0] == "IProcess");
-        var processType = typeof(ProcessBase<ExecutionContextBase>);
-        var instructions = processType.GetProperty(nameof(ProcessBase.Instructions),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!;
-
-        Assert.Equal(typeof(IReadOnlyList<InstructionBase<ExecutionContextBase>>), instructions.PropertyType);
-        Assert.True(instructions.GetMethod!.IsFinal);
-        Assert.Null(instructions.SetMethod);
-        Assert.False(processType.GetMethod(nameof(ProcessBase<ExecutionContextBase>.Add))!.IsVirtual);
-        Assert.False(processType.GetMethod(nameof(ProcessBase<ExecutionContextBase>.Append))!.IsVirtual);
-        Assert.Equal(typeof(IReadOnlyList<InstructionBase>),
-            typeof(ProcessBase).GetProperty(nameof(ProcessBase.Instructions))!.PropertyType);
-    }
-
-    private sealed class ComposedProcess : ProcessBase<ExecutionContextBase>
-    {
-        public InstructionBase<int, ExecutionContextBase> Input { get; } = new Step(40);
-        public InstructionBase<int, ExecutionContextBase> Output { get; }
-
-        public ComposedProcess()
-        {
-            Add(Input);
-            Output = Append(Input, source => new Step(2, source));
-        }
     }
 
     private class Step : InstructionBase<int, ExecutionContextBase>

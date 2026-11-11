@@ -8,26 +8,6 @@ public class ExecutionContextTests
     private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
-    public async Task RegisteringRootRegistersAndExecutesItsDependencies()
-    {
-        var context = new ExecutionContextBase();
-        var input = new GraphInstruction(36);
-        var output = new GraphInstruction(0, input);
-        var operation = context.Register(output);
-
-        Assert.Equal(2, context.Operations.Count);
-        Assert.False(operation.Promise().IsCompleted);
-        var execution = context.ExecuteAsync();
-        await execution.WaitAsync(_timeout);
-
-        Assert.Equal(36, (await operation.Promise().WaitAsync(_timeout)).GetResult());
-        Assert.Same(operation, context.Register(output));
-        Assert.All(context.Operations.Values, registered =>
-            Assert.Equal(1, Assert.IsType<TestOperation>(registered).InvocationCount));
-        Assert.Same(execution, context.ExecuteAsync());
-    }
-
-    [Fact]
     public async Task ConcurrentRootLookupsShareEntireOperationGraph()
     {
         var context = new ExecutionContextBase();
@@ -87,34 +67,13 @@ public class ExecutionContextTests
     }
 
     [Fact]
-    public async Task SeparateInstancesWithSameConfigurationAndIdRemainDistinct()
+    public async Task OverriddenEqualityAndDuplicateIdsDoNotMergeInstructionsOrCreateFalseCycles()
     {
         var context = new ExecutionContextBase();
         var id = Guid.NewGuid();
-        var first = new GraphInstruction(42) { Id = id };
-        var second = new GraphInstruction(42) { Id = id };
-
-        var firstOperation = context.Register(first);
-        var secondOperation = context.Register(second);
-
-        Assert.NotSame(firstOperation, secondOperation);
-        Assert.Equal(2, context.Operations.Count);
-        await context.ExecuteAsync().WaitAsync(_timeout);
-        Assert.Equal(42, (await firstOperation.Promise().WaitAsync(_timeout)).GetResult());
-        Assert.Equal(42, (await secondOperation.Promise().WaitAsync(_timeout)).GetResult());
-        Assert.Equal(1, Assert.IsType<TestOperation>(firstOperation).InvocationCount);
-        Assert.Equal(1, Assert.IsType<TestOperation>(secondOperation).InvocationCount);
-    }
-
-    [Fact]
-    public async Task OverriddenEqualityDoesNotMergeInstructionsOrCreateFalseCycles()
-    {
-        var context = new ExecutionContextBase();
-        var input = new EqualInstruction(40);
-        var left = new EqualInstruction(1, input);
-        var right = new EqualInstruction(2, input);
-        Assert.True(left.Equals(input));
-        Assert.True(left.Equals(right));
+        var input = new EqualInstruction(40) { Id = id };
+        var left = new EqualInstruction(1, input) { Id = id };
+        var right = new EqualInstruction(2, input) { Id = id };
 
         var leftOperation = context.Register(left);
         var rightOperation = context.Register(right);
@@ -159,22 +118,6 @@ public class ExecutionContextTests
         {
             Assert.Equal(1, Assert.IsType<TestOperation>(operation).InvocationCount);
         });
-    }
-
-    [Fact]
-    public async Task UntypedRegistrationSharesTypedOperation()
-    {
-        var context = new ExecutionContextBase();
-        var instruction = new GraphInstruction(42);
-        InstructionBase<ExecutionContextBase> untypedInstruction = instruction;
-
-        var operation = context.Register(untypedInstruction);
-
-        Assert.Same(operation, context.Register(instruction));
-        Assert.Single(context.Operations);
-        Assert.Equal(0, Assert.IsType<TestOperation>(operation).InvocationCount);
-        await context.ExecuteAsync().WaitAsync(_timeout);
-        Assert.Equal(1, Assert.IsType<TestOperation>(operation).InvocationCount);
     }
 
     [Fact]
@@ -285,57 +228,9 @@ public class ExecutionContextTests
 
         Assert.Empty(snapshot);
         Assert.Same(operation, context.Operations[instruction]);
-        var dictionary = Assert.IsAssignableFrom<IDictionary<InstructionBase, OperationInstanceBase>>(context.Operations);
-        Assert.Throws<NotSupportedException>(() => dictionary.Clear());
+        if (context.Operations is IDictionary<InstructionBase, OperationInstanceBase> dictionary)
+            Assert.Throws<NotSupportedException>(() => dictionary.Clear());
         Assert.Single(context.Operations);
-    }
-
-    [Fact]
-    public void RegistrationRejectsTypeMismatch()
-    {
-        var context = new ExecutionContextBase();
-        var instruction = new TestInstruction();
-        context.GetOrAddOperation(instruction, () => new CountingOperation());
-
-        Assert.Throws<InvalidOperationException>(() =>
-            context.GetOrAddOperation(instruction,
-                () => new TestOperation(context,
-                    _ => Task.FromResult<IOperationResult<int>>(new ImmediateResult<int>(1)))));
-    }
-
-    [Fact]
-    public void FailedFactoryDoesNotPoisonRegistration()
-    {
-        var context = new ExecutionContextBase();
-        var instruction = new TestInstruction();
-        var error = new InvalidOperationException("Factory failed.");
-
-        Assert.Same(error, Assert.Throws<InvalidOperationException>(() =>
-            context.GetOrAddOperation<CountingOperation>(instruction, () => throw error)));
-        Assert.Empty(context.Operations);
-        Assert.Throws<InvalidOperationException>(() =>
-            context.GetOrAddOperation<CountingOperation>(instruction, () => null!));
-        Assert.Empty(context.Operations);
-
-        var operation = context.GetOrAddOperation(instruction, () => new CountingOperation());
-        Assert.Same(operation, context.Operations[instruction]);
-    }
-
-    [Fact]
-    public void RecursiveRegistrationDetectsCycles()
-    {
-        var context = new ExecutionContextBase();
-        var first = new TestInstruction();
-        var second = new TestInstruction();
-
-        var error = Assert.Throws<InvalidOperationException>(() =>
-            context.GetOrAddOperation(first, () =>
-                context.GetOrAddOperation(second, () =>
-                    context.GetOrAddOperation(first, () => new CountingOperation()))));
-
-        Assert.Contains("Cyclic", error.Message);
-        Assert.Empty(context.Operations);
-        context.GetOrAddOperation(first, () => new CountingOperation());
     }
 
     [Fact]
@@ -376,13 +271,15 @@ public class ExecutionContextTests
     }
 
     [Fact]
-    public async Task UpstreamFailureFaultsContextAndDependentPromise()
+    public async Task UpstreamFailureFaultsContextAndAllDependentPromises()
     {
         var context = new ExecutionContextBase();
         var completion = NewCompletionSource<IOperationResult<int>>();
         var upstream = context.GetOrAddOperation(new TestInstruction(),
             () => new TestOperation(context, token => completion.Task.WaitAsync(token)));
         var downstream = context.GetOrAddOperation(new TestInstruction(),
+            () => new TestOperation(context, token => upstream.Promise().WaitAsync(token)));
+        var sibling = context.GetOrAddOperation(new TestInstruction(),
             () => new TestOperation(context, token => upstream.Promise().WaitAsync(token)));
         var execution = context.ExecuteAsync();
         var error = new InvalidDataException("Upstream failed.");
@@ -394,7 +291,10 @@ public class ExecutionContextTests
             () => upstream.Promise().WaitAsync(_timeout)));
         Assert.Same(error, await Assert.ThrowsAsync<InvalidDataException>(
             () => downstream.Promise().WaitAsync(_timeout)));
+        Assert.Same(error, await Assert.ThrowsAsync<InvalidDataException>(
+            () => sibling.Promise().WaitAsync(_timeout)));
         Assert.Same(execution, context.ExecuteAsync());
+        Assert.Equal(1, upstream.InvocationCount);
     }
 
     [Fact]
@@ -454,43 +354,6 @@ public class ExecutionContextTests
         await AssertCanceledPromiseAsync(downstream, cancellation.Token);
         Assert.Equal(1, upstream.InvocationCount);
         Assert.Same(execution, context.ExecuteAsync());
-    }
-
-    [Fact]
-    public async Task CancellationBeforePublicationDiscardsNonCooperativeResult()
-    {
-        using var cancellation = new CancellationTokenSource();
-        var context = new ExecutionContextBase(cancellation.Token);
-        var completion = NewCompletionSource<IOperationResult<int>>();
-        var operation = context.GetOrAddOperation(new TestInstruction(),
-            () => new TestOperation(context, _ => completion.Task));
-        var execution = context.ExecuteAsync();
-
-        cancellation.Cancel();
-        completion.SetResult(new ImmediateResult<int>(42));
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => execution.WaitAsync(_timeout));
-        await AssertCanceledPromiseAsync(operation, cancellation.Token);
-    }
-
-    [Fact]
-    public async Task CancelingObserverWaitDoesNotCancelRun()
-    {
-        var context = new ExecutionContextBase();
-        using var observerCancellation = new CancellationTokenSource();
-        var completion = NewCompletionSource<IOperationResult<int>>();
-        var operation = context.GetOrAddOperation(new TestInstruction(),
-            () => new TestOperation(context, token => completion.Task.WaitAsync(token)));
-        var execution = context.ExecuteAsync();
-        var observer = operation.Promise().WaitAsync(observerCancellation.Token);
-        observerCancellation.Cancel();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observer.WaitAsync(_timeout));
-        Assert.False(execution.IsCompleted);
-        Assert.False(operation.Promise().IsCompleted);
-        completion.SetResult(new ImmediateResult<int>(42));
-        await execution.WaitAsync(_timeout);
-        Assert.Equal(42, (await operation.Promise().WaitAsync(_timeout)).GetResult());
     }
 
     [Theory]

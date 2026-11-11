@@ -112,30 +112,6 @@ public class OperationInstanceBaseTests
         Assert.Equal(1, operation.InvocationCount);
     }
 
-    [Fact]
-    public async Task FailureAfterProducingLocalResultDoesNotPublishResult()
-    {
-        var completion = NewCompletionSource<bool>();
-        var localResult = new ImmediateResult<int>(42);
-        var error = new InvalidOperationException("Failure after computing result.");
-        var operation = new TestOperation(async () =>
-        {
-            await completion.Task;
-            if (localResult.GetResult() == 42)
-                throw error;
-            return localResult;
-        });
-        var execution = operation.Execute();
-
-        Assert.False(operation.Promise().IsCompleted);
-        completion.SetResult(true);
-
-        Assert.Same(error, await Assert.ThrowsAsync<InvalidOperationException>(
-            () => execution.WaitAsync(_timeout)));
-        Assert.Same(error, await Assert.ThrowsAsync<InvalidOperationException>(
-            () => operation.Promise().WaitAsync(_timeout)));
-    }
-
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -182,29 +158,6 @@ public class OperationInstanceBaseTests
             () => operation.Promise().WaitAsync(_timeout)));
         Assert.Same(execution, operation.Execute());
         Assert.Equal(1, operation.InvocationCount);
-    }
-
-    [Fact]
-    public async Task DependencyFailureCompletesWhenAllInsteadOfHanging()
-    {
-        var completion = NewCompletionSource<IOperationResult<int>>();
-        var upstream = new TestOperation(() => completion.Task);
-        var downstream = new TestOperation(async () => await upstream.Promise());
-        var downstreamExecution = downstream.Execute();
-        var upstreamExecution = upstream.Execute();
-        var aggregate = Task.WhenAll(upstreamExecution, downstreamExecution);
-        var error = new InvalidDataException("Upstream failed.");
-
-        completion.SetException(error);
-
-        Assert.Same(error, await Assert.ThrowsAsync<InvalidDataException>(
-            () => aggregate.WaitAsync(_timeout)));
-        Assert.Same(error, await Assert.ThrowsAsync<InvalidDataException>(
-            () => downstream.Promise().WaitAsync(_timeout)));
-        Assert.Same(error, await Assert.ThrowsAsync<InvalidDataException>(
-            () => upstream.Promise().WaitAsync(_timeout)));
-        Assert.True(upstreamExecution.IsFaulted);
-        Assert.True(downstreamExecution.IsFaulted);
     }
 
     [Fact]

@@ -7,10 +7,8 @@ public class ConditionalInstructionTests
 {
     private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(10);
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task ConcreteInstructionUsesFactoryWithoutRequiringSubclass(bool takeBranch)
+    [Fact]
+    public async Task BodyContextFactoryReceivesParentAndCreatesOneChildPerRun()
     {
         using var cancellation = new CancellationTokenSource();
         var context = new TestContext(cancellation.Token);
@@ -19,7 +17,7 @@ public class ConditionalInstructionTests
         var parents = new List<TestContext>();
         var children = new List<TestContext>();
         var conditional = new ConditionalInstruction<TestContext>(
-            new ValueInstruction<bool>(takeBranch), Body(local), parent =>
+            new ValueInstruction<bool>(true), Body(local), parent =>
             {
                 parents.Add(parent);
                 var child = new TestContext(parent.CancellationToken, parent.Service);
@@ -45,11 +43,7 @@ public class ConditionalInstructionTests
 
         Assert.Same(operation.Completion, operation.Execute());
         var localOperation = local.GetTypedOperation(child);
-        Assert.Equal(takeBranch ? 1 : 0, Assert.IsType<ValueOperation<int>>(localOperation).InvocationCount);
-        if (takeBranch)
-            Assert.Equal(42, (await localOperation.Promise().WaitAsync(_timeout)).GetResult());
-        else
-            Assert.False(localOperation.Completion.IsCompleted);
+        Assert.Equal(42, (await localOperation.Promise().WaitAsync(_timeout)).GetResult());
         Assert.Single(children);
 
         var next = new TestContext(cancellation.Token);

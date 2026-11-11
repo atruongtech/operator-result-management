@@ -171,7 +171,7 @@ Dependency edits do not update process membership automatically. Calling `Add` a
 
 ## Tests and older integrations
 
-The [test project](operator-result-management.Tests) covers registration, lifecycle, graph editing, factories, and conditional scopes:
+The [test project](operator-result-management.Tests) targets only the library: registration, lifecycle, graph editing, factories, and conditional scopes. Test-local instructions and operations exercise library contracts; the POC's console UI and arithmetic are outside the automated suite. Favor observable behavior over reflection-based API-shape checks, collection implementation types, or exact diagnostic wording.
 
 ```powershell
 dotnet test .\operator-result-management.Tests\operator-result-management.Tests.csproj

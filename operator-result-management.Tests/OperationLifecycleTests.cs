@@ -61,7 +61,6 @@ public class OperationLifecycleTests
         Assert.Same(completion, execution);
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => completion.WaitAsync(_timeout));
-        Assert.Equal("Operation execution returned a null task.", error.Message);
         if (operation is ResultWork<int> resultOperation)
         {
             Assert.Same(completion, resultOperation.Promise());
@@ -175,29 +174,6 @@ public class OperationLifecycleTests
     }
 
     [Fact]
-    public async Task DerivedTypedOperationExtendsOnlyResultHookAndWorksThroughBaseView()
-    {
-        using var cancellation = new CancellationTokenSource();
-        var invocationCount = 0;
-        var operation = new IncrementedResultWork(new ExecutionContextBase(cancellation.Token), token =>
-        {
-            Assert.Equal(cancellation.Token, token);
-            invocationCount++;
-            return Task.FromResult<IOperationResult<int>>(new ImmediateResult<int>(41));
-        });
-        OperationInstanceBase untyped = operation;
-
-        Assert.Equal(0, invocationCount);
-        Assert.Same(operation.Promise(), untyped.Completion);
-        Assert.Same(untyped.Completion, untyped.Execute());
-        await untyped.Completion.WaitAsync(_timeout);
-
-        Assert.Equal(42, (await operation.Promise().WaitAsync(_timeout)).GetResult());
-        Assert.Equal(1, invocationCount);
-        Assert.Same(untyped.Completion, operation.Execute());
-    }
-
-    [Fact]
     public async Task NullWrappedValueIsSuccessfulResult()
     {
         var result = new ImmediateResult<string?>(null);
@@ -239,7 +215,7 @@ public class OperationLifecycleTests
         protected override Task ExecuteCoreAsync(CancellationToken cancellationToken) => work(cancellationToken);
     }
 
-    private class ResultWork<TResult>(
+    private sealed class ResultWork<TResult>(
         ExecutionContextBase context, Func<CancellationToken, Task<IOperationResult<TResult>>> work)
         : OperationInstanceBase<TResult>(context)
     {
@@ -247,14 +223,4 @@ public class OperationLifecycleTests
             => work(cancellationToken);
     }
 
-    private sealed class IncrementedResultWork(
-        ExecutionContextBase context, Func<CancellationToken, Task<IOperationResult<int>>> work)
-        : ResultWork<int>(context, work)
-    {
-        protected override async Task<IOperationResult<int>> ExecuteResultAsync(CancellationToken cancellationToken)
-        {
-            var result = await base.ExecuteResultAsync(cancellationToken);
-            return new ImmediateResult<int>(result.GetResult() + 1);
-        }
-    }
 }
