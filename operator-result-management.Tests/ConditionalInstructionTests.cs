@@ -17,7 +17,7 @@ public class ConditionalInstructionTests
         var parents = new List<TestContext>();
         var children = new List<TestContext>();
         var conditional = new ConditionalInstruction<TestContext>(
-            new ValueInstruction<bool>(true), Body(local), parent =>
+            new ValueInstruction<bool>(true), Body(input, local), parent =>
             {
                 parents.Add(parent);
                 var child = new TestContext(parent.CancellationToken, parent.Service);
@@ -63,7 +63,7 @@ public class ConditionalInstructionTests
         var local = new ValueInstruction<int>(42);
         var body = Body(local);
         var conditional = new Conditional(condition, body);
-        var process = Body(conditional);
+        var process = Body(condition, conditional);
         var context = new TestContext();
         context.Register(process);
         var operation = conditional.GetOperation(context);
@@ -146,7 +146,7 @@ public class ConditionalInstructionTests
         };
         var outerInput = new ValueInstruction<int>(7);
         var local = new SumInstruction(localInput, outerInput);
-        var conditional = new Conditional(new ValueInstruction<bool>(false), Body(local), [outerInput]);
+        var conditional = new Conditional(new ValueInstruction<bool>(false), Body(localInput, outerInput, local), [outerInput]);
         var context = new TestContext();
         context.Register(conditional);
 
@@ -171,13 +171,13 @@ public class ConditionalInstructionTests
     public async Task SelectedConditionalDoesNotActivateUnrelatedParentOrSiblingWork()
     {
         var input = new ValueInstruction<int>(21);
-        var first = new Conditional(new ValueInstruction<bool>(true), Body(new SumInstruction(input)), [input]);
-        var second = new Conditional(new ValueInstruction<bool>(true), Body(new SumInstruction(input)), [input]);
+        var first = new Conditional(new ValueInstruction<bool>(true), Body(input, new SumInstruction(input)), [input]);
+        var second = new Conditional(new ValueInstruction<bool>(true), Body(input, new SumInstruction(input)), [input]);
         var unrelated = new ValueInstruction<int>(0)
         {
             Work = _ => throw new InvalidOperationException("Unselected work.")
         };
-        var process = Body(first, second, unrelated);
+        var process = Body(input, first.Condition, first, second.Condition, second, unrelated);
         var context = new TestContext();
         context.Register(new ProcessRunRequest<TestContext>(process, [first]));
 
@@ -196,7 +196,7 @@ public class ConditionalInstructionTests
         var outer = new SumInstruction(input, input);
         var local = new SumInstruction(outer, input);
         var condition = new ValueInstruction<bool>(true);
-        var conditional = new Conditional(condition, Body(local), [outer]);
+        var conditional = new Conditional(condition, Body(input, outer, local), [outer]);
         var context = new TestContext();
         context.Register(conditional);
         var child = Assert.Single(conditional.Contexts);
@@ -221,7 +221,7 @@ public class ConditionalInstructionTests
         var input = new ValueInstruction<int>(21);
         var replacement = new ValueInstruction<int>(100);
         var local = new SumInstruction(input, input);
-        var body = Body(local);
+        var body = Body(input, local);
         var conditional = new Conditional(condition, body);
         var context = new TestContext();
         context.Register(conditional);
@@ -257,8 +257,8 @@ public class ConditionalInstructionTests
     {
         var input = new ValueInstruction<int>(21);
         var local = new SumInstruction(input, input);
-        var inner = new Conditional(new ValueInstruction<bool>(innerValue), Body(local), [input]);
-        var outer = new Conditional(new ValueInstruction<bool>(outerValue), Body(inner), [input]);
+        var inner = new Conditional(new ValueInstruction<bool>(innerValue), Body(input, local), [input]);
+        var outer = new Conditional(new ValueInstruction<bool>(outerValue), Body(input, inner.Condition, inner), [input]);
         var context = new TestContext();
         context.Register(outer);
         var outerBody = Assert.Single(outer.Contexts);
@@ -389,7 +389,7 @@ public class ConditionalInstructionTests
     public void UndeclaredOuterInputsAndSharedSiblingLocalsAreRejected()
     {
         var input = new ValueInstruction<int>(42);
-        var conditional = new Conditional(new ValueInstruction<bool>(true), Body(new SumInstruction(input)));
+        var conditional = new Conditional(new ValueInstruction<bool>(true), Body(input, new SumInstruction(input)));
         var context = new TestContext();
         context.Register(input);
         Assert.Throws<InvalidOperationException>(() => context.Register(conditional));
@@ -410,10 +410,14 @@ public class ConditionalInstructionTests
         var firstBody = Body();
         var first = new Conditional(new ValueInstruction<bool>(true), firstBody);
         if (direct)
+        {
+            firstBody.Add(first.Condition);
             firstBody.Add(first);
+        }
         else
         {
-            var second = new Conditional(new ValueInstruction<bool>(true), Body(first));
+            var second = new Conditional(new ValueInstruction<bool>(true), Body(first.Condition, first));
+            firstBody.Add(second.Condition);
             firstBody.Add(second);
         }
 
@@ -426,7 +430,7 @@ public class ConditionalInstructionTests
         var nestedLocal = new ValueInstruction<int>(7);
         var nested = new Conditional(new ValueInstruction<bool>(true), Body(nestedLocal));
         var failing = new ValueInstruction<int>(42) { FailRegistration = true };
-        var conditional = new Conditional(new ValueInstruction<bool>(true), Body(nested, failing));
+        var conditional = new Conditional(new ValueInstruction<bool>(true), Body(nested.Condition, nested, failing));
         var context = new TestContext();
 
         Assert.Throws<InvalidOperationException>(() => context.Register(conditional));

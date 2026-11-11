@@ -57,24 +57,23 @@ public class ConditionalInstruction<TContext> : InstructionBase<TContext>
     /// </summary>
     protected override OperationInstanceBase CreateOperation(TContext context, InstructionInputs<TContext> inputs)
     {
-        var externalGraph = new ProcessBase<TContext>();
-        foreach (var dependency in _dependencies)
-            externalGraph.Add(dependency);
         var imports = new Dictionary<InstructionBase, OperationInstanceBase>(ReferenceEqualityComparer.Instance);
-        foreach (var instruction in externalGraph.Instructions)
-            imports.Add(instruction, instruction.GetOperation(context));
+        foreach (var dependency in _dependencies)
+            foreach (var instruction in ProcessBase<TContext>.GetDependencyGraph(dependency))
+                if (!imports.ContainsKey(instruction))
+                    imports.Add(instruction, instruction.GetOperation(context));
         var condition = inputs.GetOperation(Condition);
 
-        var bodyGraph = new ProcessBase<TContext>();
-        foreach (var instruction in Body.Instructions)
-            bodyGraph.Add(instruction);
+        var bodyRequest = new ProcessRunRequest<TContext>(Body);
+        foreach (var instruction in bodyRequest.SelectedInstructions)
+            _ = ProcessBase<TContext>.GetDependencyGraph(instruction);
 
         var bodyContext = CreateBodyContext(context)
             ?? throw new InvalidOperationException("Body context factory returned null.");
         bodyContext.AttachScope(context, imports);
         try
         {
-            bodyContext.Register(bodyGraph);
+            bodyRequest.Register(bodyContext);
             bodyContext.FreezeRegistration();
             return new ConditionalOperation(context, condition, bodyContext);
         }

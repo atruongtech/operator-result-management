@@ -60,7 +60,7 @@ Keep reusable **definitions** separate from each **run**:
 
 | Type | Responsibility |
 |---|---|
-| `ProcessBase<TContext>` | Instruction membership, composed through `Add` and `Append`. |
+| `ProcessBase<TContext>` | Instruction membership, composed through `Add`. |
 | `InstructionBase<TContext>` / `InstructionBase<TResult, TContext>` | Declare dependencies and create completion-only or typed-result operations. |
 | `ExecutionContextBase` | One run's operation registry, cancellation token, and execution lifecycle. Derive to supply services. |
 | `OperationInstanceBase` / `OperationInstanceBase<TResult>` | Captured run-specific work and shared completion/result tasks. |
@@ -85,15 +85,10 @@ using operator_result_management;
 using operator_result_management.Basic;
 
 var process = new ProcessBase<NumberPipelineExecutionContext>();
-var input = new DirectInputInstruction();
-process.Add(input);
-
-var multiply = process.Append(
-    input, source => new UserInputMultiplyInstruction(source));
-var factor = process.Append(
-    multiply, source => new FactorInstruction(source));
-var difference = process.Append(
-    factor, source => new MinMaxDifferenceInstruction(source));
+var input = process.Add(new DirectInputInstruction());
+var multiply = process.Add(new UserInputMultiplyInstruction(input));
+var factor = process.Add(new FactorInstruction(multiply));
+var difference = process.Add(new MinMaxDifferenceInstruction(factor));
 
 using var cancellation = new CancellationTokenSource();
 var context = new NumberPipelineExecutionContext(
@@ -109,7 +104,11 @@ Console.WriteLine($"Final result: {value}");
 
 `Register(process)` registers all current members. The subsequent `Register(difference)` retrieves the existing typed operation without duplicating work. The POC's full `Program.cs` also wires and removes a `Console.CancelKeyPress` handler.
 
-`Add` discovers transitive dependencies and validates cycles and context compatibility. `Append` creates a typed-result dependent from an existing member; the returned instruction must declare that member as a direct dependency. Use `Add` for multi-input or completion-only steps.
+`Add<TInstruction>` adds only the supplied instruction and returns that exact instance, preserving its static type. All direct and transitive dependencies must already be members of the same process by reference identity. Add inputs before their consumers; adding only a graph's sink does not implicitly include its upstream steps. Instructions registered in an execution context or added to another process do not satisfy this requirement.
+
+Missing dependencies, cycles, and invalid dependency metadata throw `InvalidOperationException` before process membership changes. Repeated additions still validate the current dependency graph, but do not duplicate or reorder members. This applies to typed-result and completion-only instructions alike; callers can ignore the return value.
+
+`Add` does not enforce execution ordering; operations must still await their dependencies. These checks apply to process composition, not execution-context registration. `context.Register(instruction)` and run selections still resolve upstream operations for the current run.
 
 ## Implement your own steps
 
@@ -178,9 +177,9 @@ Each `Create()` invocation must return the exact inferred instruction type with 
 
 `ConditionalInstruction<TContext>` takes a Boolean-producing instruction, a body process, a child-context factory, and optional `outerInputs`. It produces completion, not a value. The POC UI does not expose conditionals; see [ConditionalInstructionTests](operator-result-management.Tests/ConditionalInstructionTests.cs) for complete examples.
 
-- Add the conditional to the parent process, not its body-local instructions.
+- Add the condition and any outer inputs (with their dependencies) to the parent process before adding the conditional. Do not add its body-local instructions to the parent.
 - The factory must return a fresh, unused child context with the parent's exact cancellation token and required services. Do not register work in the factory.
-- Declare cross-scope data through `outerInputs`. The condition, outer inputs, and their dependencies share existing outer operations, which execute even when the condition is false.
+- Declare cross-scope data through `outerInputs`. When composing the body, explicitly add any imported instructions and their dependencies before body steps that consume them. Body membership does not grant an import: the condition, outer inputs, and their dependencies share existing outer operations only when declared through the conditional, and execute even when the condition is false. Imported instructions do not become locally owned operations in the child context.
 - Body-local instructions cannot also belong to parent or sibling scopes. Recursive containment and dependencies back into enclosing conditionals are rejected.
 - Registration prepares and freezes the whole body, including nested bodies, even for a false condition. Invalid bodies still fail registration.
 
@@ -192,7 +191,7 @@ Instructions may be mutable, but registered operations must use captured state. 
 
 `process.Instructions`, run requests, and `context.Operations` preserve membership or associations, **not deep copies of instruction state**. The operations map contains locally owned operations, excluding conditional imports. For historical records, retain immutable definitions or capture configuration and run metadata yourself.
 
-Dependency edits do not update process membership automatically. Calling `Add` again discovers the current graph but does not remove old members or reorder existing ones. Rebuild the process for structural edits; there is no removal/replacement API.
+Dependency edits do not update process membership automatically. Add any new upstream instructions in dependency order, then call `Add` again on the edited instruction to validate its current graph. Missing transitive dependencies are rejected even when the edited instruction is already a member. Validation does not remove old members or reorder existing ones. Registration still captures the current graph and resolves upstream operations; composition checks are not a freeze on mutable definitions. Rebuild the process when a new membership order is needed; there is no removal/replacement API.
 
 `InstructionBase.Id` is stable metadata, not a registry key or enforced uniqueness constraint. Multiple instructions may map to one operation; reverse lookup must account for all matching references.
 

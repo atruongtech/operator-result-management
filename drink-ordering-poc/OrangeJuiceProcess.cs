@@ -9,21 +9,17 @@ public sealed class OrangeJuiceProcess : ProcessBase<DrinkOrderExecutionContext>
 
     public OrangeJuiceProcess()
     {
-        var order = new TakeOrangeJuiceOrderInstruction();
-        Add(order);
-        var needsRefill = Append(order, input => new CheckHopperInstruction(input));
+        var order = Add(new TakeOrangeJuiceOrderInstruction());
+        var needsRefill = Add(new CheckHopperInstruction(order));
 
         var refillBody = new ProcessBase<DrinkOrderExecutionContext>();
         refillBody.Add(new FillHopperInstruction());
-        var refill = new ConditionalInstruction<DrinkOrderExecutionContext>(
-            needsRefill, refillBody, parent => parent.CreateChild());
-        Add(refill);
+        var refill = Add(new ConditionalInstruction<DrinkOrderExecutionContext>(
+            needsRefill, refillBody, parent => parent.CreateChild()));
 
-        var pulpChoice = new ChoosePulpInstruction(refill);
-        Add(pulpChoice);
-        var produce = new ProduceOrangeJuiceInstruction(order, pulpChoice);
-        Add(produce);
-        Result = Append(produce, input => new ReturnOrangeJuiceInstruction(input));
+        var pulpChoice = Add(new ChoosePulpInstruction(refill));
+        var produce = Add(new ProduceOrangeJuiceInstruction(order, pulpChoice));
+        Result = Add(new ReturnOrangeJuiceInstruction(produce));
     }
 }
 

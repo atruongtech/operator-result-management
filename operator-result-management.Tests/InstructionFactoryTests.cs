@@ -364,13 +364,16 @@ public class InstructionFactoryTests
         var factory = schema.Creates(bound => new SumInstruction(bound.Get(terms)));
         var context = new ExecutionContextBase();
         var first = new ValueInstruction<int>(2);
+        var second = new ValueInstruction<int>(3);
         var ready = Assert.IsType<ReadyResponse<ExecutionContextBase>>(
-            factory.BindInputs([first, new ValueInstruction<int>(3), first]));
+            factory.BindInputs([first, second, first]));
 
         Assert.Empty(context.Operations);
         var instruction = Assert.IsType<SumInstruction>(ready.Create());
         Assert.Empty(context.Operations);
         var process = new ProcessBase<ExecutionContextBase>();
+        process.Add(first);
+        process.Add(second);
         process.Add(instruction);
         context.Register(process);
         var operation = instruction.GetTypedOperation(context);

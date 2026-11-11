@@ -9,21 +9,18 @@ public sealed class CoffeeProcess : ProcessBase<DrinkOrderExecutionContext>
 
     public CoffeeProcess()
     {
-        var order = new TakeCoffeeOrderInstruction();
-        Add(order);
-        var needsBrew = Append(order, input => new CheckCarafeInstruction(input));
+        var order = Add(new TakeCoffeeOrderInstruction());
+        var needsBrew = Add(new CheckCarafeInstruction(order));
 
         var brewBody = new ProcessBase<DrinkOrderExecutionContext>();
         brewBody.Add(new BrewCoffeeInstruction());
-        var brew = new ConditionalInstruction<DrinkOrderExecutionContext>(
-            needsBrew, brewBody, parent => parent.CreateChild());
-        Add(brew);
+        var brew = Add(new ConditionalInstruction<DrinkOrderExecutionContext>(
+            needsBrew, brewBody, parent => parent.CreateChild()));
 
-        var pour = new PourCoffeeInstruction(order, brew);
-        Add(pour);
-        var cream = Append(pour, input => new AddCreamInstruction(input));
-        var sugar = Append(cream, input => new AddSugarInstruction(input));
-        Result = Append(sugar, input => new ReturnCoffeeInstruction(input));
+        var pour = Add(new PourCoffeeInstruction(order, brew));
+        var cream = Add(new AddCreamInstruction(pour));
+        var sugar = Add(new AddSugarInstruction(cream));
+        Result = Add(new ReturnCoffeeInstruction(sugar));
     }
 }
 

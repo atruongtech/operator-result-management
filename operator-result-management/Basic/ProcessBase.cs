@@ -18,7 +18,7 @@ namespace operator_result_management
 
     /// <summary>
     /// Library-owned, reference-identified instruction graph. Custom processes compose
-    /// instructions through Add and Append rather than replace graph behavior.
+    /// instructions through Add rather than replace graph behavior.
     /// Run selection, execution, and client change notifications are separate.
     /// </summary>
     public class ProcessBase<TContext> : ProcessBase where TContext : ExecutionContextBase
@@ -42,63 +42,39 @@ namespace operator_result_management
         }
 
         /// <summary>
-        /// Atomically adds a step and its transitive dependencies, validating context
-        /// compatibility and cycles. Repeated additions reuse instruction references.
-        /// After dependency edits, call Add again to discover the current graph;
-        /// previously added instructions remain in the collection.
+        /// Atomically adds only the supplied step. All direct and transitive dependencies
+        /// must already be process members by reference identity. Validates context
+        /// compatibility and cycles before changing membership.
+        /// After dependency edits, add any new dependencies first, then call Add again
+        /// to revalidate the step. Existing members are not removed or reordered.
+        /// Returns the supplied instruction with its static type preserved, even if
+        /// it was already a member.
         /// </summary>
-        public void Add(InstructionBase<TContext> instruction)
+        public TInstruction Add<TInstruction>(TInstruction instruction)
+            where TInstruction : InstructionBase<TContext>
         {
             ArgumentNullException.ThrowIfNull(instruction);
 
             lock (_sync)
             {
                 var graph = GetDependencyGraph(instruction);
-                var instructions = _instructions.ToBuilder();
                 var known = new HashSet<InstructionBase>(_instructions, ReferenceEqualityComparer.Instance);
                 foreach (var step in graph)
                 {
-                    if (known.Add(step))
-                        instructions.Add(step);
+                    if (!ReferenceEquals(step, instruction) && !known.Contains(step))
+                        throw new InvalidOperationException(
+                            "Instruction dependencies must be added to the process before their dependent instruction.");
                 }
 
-                if (instructions.Count == _instructions.Count)
-                    return;
+                if (known.Contains(instruction))
+                    return instruction;
 
-                _instructions = instructions.ToImmutable();
+                _instructions = _instructions.Add(instruction);
+                return instruction;
             }
         }
 
-        /// <summary>
-        /// Creates and adds a typed dependent of an existing process instruction.
-        /// The factory must return an instruction declaring input as a direct dependency.
-        /// </summary>
-        public InstructionBase<TResult, TContext> Append<TInput, TResult>(
-            InstructionBase<TInput, TContext> input,
-            Func<InstructionBase<TInput, TContext>, InstructionBase<TResult, TContext>> factory)
-        {
-            ArgumentNullException.ThrowIfNull(input);
-            ArgumentNullException.ThrowIfNull(factory);
-            lock (_sync)
-                RequireMember(input, nameof(input));
-
-            var instruction = factory(input)
-                ?? throw new InvalidOperationException("Dependent instruction factory returned null.");
-            if (instruction.Dependencies is null ||
-                !instruction.Dependencies.Any(dependency => ReferenceEquals(dependency, input)))
-                throw new InvalidOperationException("Appended instruction must declare the input as a direct dependency.");
-
-            Add(instruction);
-            return instruction;
-        }
-
-        private void RequireMember(InstructionBase instruction, string parameterName)
-        {
-            if (!_instructions.Any(step => ReferenceEquals(step, instruction)))
-                throw new ArgumentException("Instruction does not belong to this process.", parameterName);
-        }
-
-        private static List<InstructionBase<TContext>> GetDependencyGraph(InstructionBase<TContext> instruction)
+        internal static List<InstructionBase<TContext>> GetDependencyGraph(InstructionBase<TContext> instruction)
         {
             var graph = new List<InstructionBase<TContext>>();
             var visited = new HashSet<InstructionBase>(ReferenceEqualityComparer.Instance);

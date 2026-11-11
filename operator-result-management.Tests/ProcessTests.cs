@@ -8,22 +8,79 @@ public class ProcessTests
     private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
-    public void AddingRootDiscoversDistinctStepsAndDependencyLinks()
+    public void AddingRootPreservesExplicitMembershipAndDependencyLinks()
     {
         var process = new ProcessBase<ExecutionContextBase>();
-        var input = new Step(40);
-        var left = new Step(1, input);
-        var right = new Step(2, input);
+        var input = process.Add(new Step(40));
+        var left = process.Add(new Step(1, input));
+        var right = process.Add(new Step(2, input));
         var root = new Step(0, left, right);
-        process.Add(root);
+        Step added = process.Add(root);
 
+        Assert.Same(root, added);
         Assert.Equal(new InstructionBase[] { input, left, right, root }, process.Instructions);
         Assert.Same(input, Assert.Single(left.Dependencies));
         Assert.Same(input, Assert.Single(right.Dependencies));
         Assert.Equal(new InstructionBase[] { left, right }, root.Dependencies);
         var instructions = process.Instructions;
-        process.Add(root);
+        Assert.Same(root, process.Add(root));
         Assert.Same(instructions, process.Instructions);
+    }
+
+    [Fact]
+    public async Task AddingInstructionsInlinePreservesConcreteTypesAndSharedExecution()
+    {
+        var process = new ProcessBase<ExecutionContextBase>();
+        Step input = process.Add(new Step(40));
+        Step left = process.Add(new Step(1, input));
+        Step right = process.Add(new Step(2, input));
+        var context = new ExecutionContextBase();
+        context.Register(process);
+
+        await context.ExecuteAsync().WaitAsync(_timeout);
+
+        Assert.Equal(new InstructionBase[] { input, left, right }, process.Instructions);
+        Assert.Equal(41, (await context.Register(left).Promise()).GetResult());
+        Assert.Equal(42, (await context.Register(right).Promise()).GetResult());
+        Assert.All(context.Operations.Values, operation =>
+            Assert.Equal(1, Assert.IsType<TestOperation>(operation).InvocationCount));
+    }
+
+    [Fact]
+    public void AddingAnExistingDependencyReturnsTheSameTypedInstruction()
+    {
+        var process = new ProcessBase<ExecutionContextBase>();
+        InstructionBase<int, ExecutionContextBase> input = new Step(40);
+        process.Add(input);
+        process.Add(new Step(2, input));
+        var instructions = process.Instructions;
+
+        InstructionBase<int, ExecutionContextBase> added = process.Add(input);
+
+        Assert.Same(input, added);
+        Assert.Same(instructions, process.Instructions);
+        Assert.Equal(2, process.Instructions.Count);
+    }
+
+    [Fact]
+    public async Task AddingCompletionOnlyInstructionsReturnsTheSameInstruction()
+    {
+        var process = new ProcessBase<ExecutionContextBase>();
+        var instruction = new CompletionStep();
+
+        CompletionStep added = process.Add(instruction);
+        Assert.Same(instruction, added);
+        var instructions = process.Instructions;
+        Assert.Same(instruction, process.Add(instruction));
+        Assert.Same(instructions, process.Instructions);
+        var context = new ExecutionContextBase();
+        context.Register(process);
+        var operation = context.Register(added);
+
+        await context.ExecuteAsync().WaitAsync(_timeout);
+
+        Assert.True(operation.Completion.IsCompletedSuccessfully);
+        Assert.Single(context.Operations);
     }
 
     [Fact]
@@ -32,6 +89,7 @@ public class ProcessTests
         var process = new ProcessBase<ExecutionContextBase>();
         var input = new Step(40);
         var output = new Step(2, input);
+        process.Add(input);
         process.Add(output);
         IReadOnlyList<InstructionBase<ExecutionContextBase>> instructions = process.Instructions;
         ProcessBase untypedProcess = process;
@@ -50,13 +108,13 @@ public class ProcessTests
     }
 
     [Fact]
-    public async Task TypedAppendingRunsEveryStepAndSharesUpstreamExecution()
+    public async Task AddingTypedDependentsRunsEveryStepAndSharesUpstreamExecution()
     {
         var process = new ProcessBase<ExecutionContextBase>();
         var input = new Step(40);
         process.Add(input);
-        var left = process.Append(input, source => new Step(1, source));
-        var right = process.Append(input, source => new Step(2, source));
+        var left = process.Add(new Step(1, input));
+        var right = process.Add(new Step(2, input));
 
         Assert.Equal(new InstructionBase[] { input, left, right }, process.Instructions);
         var context = new ExecutionContextBase();
@@ -85,7 +143,7 @@ public class ProcessTests
         var process = new ProcessBase<ExecutionContextBase>();
         var input = new Step(40);
         process.Add(input);
-        var sink = process.Append(input, source => new Step(2, source));
+        var sink = process.Add(new Step(2, input));
         var unrelated = new Step(100);
         process.Add(unrelated);
         var instructions = process.Instructions;
@@ -126,13 +184,13 @@ public class ProcessTests
         var process = new ProcessBase<ExecutionContextBase>();
         var input = new Step(40);
         process.Add(input);
-        var dependent = process.Append(input, source => new Step(2, source));
+        var dependent = process.Add(new Step(2, input));
         var instructions = process.Instructions;
         var fullRequest = new ProcessRunRequest<ExecutionContextBase>(process);
         InstructionBase<ExecutionContextBase>[] selection = [input];
         var request = new ProcessRunRequest<ExecutionContextBase>(process, selection);
         selection[0] = dependent;
-        var laterStep = process.Append(dependent, source => new Step(1, source));
+        var laterStep = process.Add(new Step(1, dependent));
 
         Assert.Equal(2, instructions.Count);
         Assert.Equal(2, fullRequest.SelectedInstructions.Count);
@@ -207,10 +265,10 @@ public class ProcessTests
         var execution = context.ExecuteAsync();
         Assert.False(execution.IsCompleted);
 
-        var appended = process.Append(input, source => new Step(2, source));
+        var dependent = process.Add(new Step(2, input));
         Assert.Same(input, Assert.Single(captured.SelectedInstructions));
         Assert.Single(context.Operations);
-        Assert.False(context.Operations.ContainsKey(appended));
+        Assert.False(context.Operations.ContainsKey(dependent));
         Assert.Equal(2, process.Instructions.Count);
         completion.SetResult(new ImmediateResult<int>(40));
         await execution.WaitAsync(_timeout);
@@ -221,13 +279,13 @@ public class ProcessTests
         Assert.Equal(2, nextRequest.SelectedInstructions.Count);
         Assert.NotSame(context.Operations[input], nextContext.Operations[input]);
         await nextContext.ExecuteAsync().WaitAsync(_timeout);
-        Assert.Equal(42, (await nextContext.Register(appended).Promise().WaitAsync(_timeout)).GetResult());
+        Assert.Equal(42, (await nextContext.Register(dependent).Promise().WaitAsync(_timeout)).GetResult());
 
         var replayContext = new ExecutionContextBase();
         captured.Register(replayContext);
         await replayContext.ExecuteAsync().WaitAsync(_timeout);
         Assert.Single(replayContext.Operations);
-        Assert.False(replayContext.Operations.ContainsKey(appended));
+        Assert.False(replayContext.Operations.ContainsKey(dependent));
     }
 
     [Fact]
@@ -267,7 +325,7 @@ public class ProcessTests
         var first = process.Instructions;
         process.Add(input);
         Assert.Same(first, process.Instructions);
-        process.Append(input, source => new Step(2, source));
+        process.Add(new Step(2, input));
         var second = process.Instructions;
 
         Assert.NotSame(empty, first);
@@ -287,21 +345,13 @@ public class ProcessTests
         var input = new EqualStep(40) { Id = id };
         var left = new EqualStep(1, input) { Id = id };
         var right = new EqualStep(2, input) { Id = id };
-        process.Add(left);
-        process.Add(right);
+        process.Add(input);
+        Assert.Same(left, process.Add(left));
+        Assert.Same(right, process.Add(right));
         Assert.Equal(3, process.Instructions.Count);
         var unknown = new EqualStep(2, input) { Id = id };
         Assert.Throws<ArgumentException>("selectedInstructions", () =>
             new ProcessRunRequest<ExecutionContextBase>(process, [unknown]));
-        var factoryCalled = false;
-        Assert.Throws<ArgumentException>("input", () =>
-            process.Append(unknown, source =>
-            {
-                factoryCalled = true;
-                return new Step(1, source);
-            }));
-        Assert.False(factoryCalled);
-
         var context = new ExecutionContextBase();
         var request = new ProcessRunRequest<ExecutionContextBase>(process, [right, right]);
         Assert.Same(right, Assert.Single(request.SelectedInstructions));
@@ -357,25 +407,6 @@ public class ProcessTests
     }
 
     [Fact]
-    public void AppendRejectsMissingDirectDependencyAndPropagatesFactoryErrors()
-    {
-        var process = new ProcessBase<ExecutionContextBase>();
-        var input = new Step(40);
-        process.Add(input);
-        var before = process.Instructions;
-        var error = new InvalidOperationException("Factory failed.");
-
-        Assert.Throws<InvalidOperationException>(() => process.Append(input, _ => new Step(2)));
-        Assert.Throws<InvalidOperationException>(() =>
-            process.Append(input, source => new Step(1, new Step(1, source))));
-        Assert.Throws<InvalidOperationException>(() =>
-            process.Append<int, int>(input, _ => null!));
-        Assert.Same(error, Assert.Throws<InvalidOperationException>(() =>
-            process.Append<int, int>(input, _ => throw error)));
-        Assert.Same(before, process.Instructions);
-    }
-
-    [Fact]
     public async Task EmptyProcessRegistersNoWorkThroughDefaultEntryPoints()
     {
         var process = new ProcessBase<ExecutionContextBase>();
@@ -406,9 +437,6 @@ public class ProcessTests
         var request = new ProcessRunRequest<ExecutionContextBase>(process);
 
         Assert.Throws<ArgumentNullException>("instruction", () => process.Add(nullInstruction));
-        Assert.Throws<ArgumentNullException>("input", () =>
-            process.Append(nullInstruction, source => new Step(2, source)));
-        Assert.Throws<ArgumentNullException>("factory", () => process.Append<int, int>(input, null!));
         Assert.Throws<ArgumentNullException>("context", () => nullContext.Register(process));
         Assert.Throws<ArgumentNullException>("process", () => new ExecutionContextBase().Register(nullProcess));
         Assert.Throws<ArgumentNullException>("process", () =>
@@ -424,18 +452,166 @@ public class ProcessTests
     }
 
     [Fact]
-    public async Task ConcurrentAdditionsKeepAllRootsAndOneSharedDependency()
+    public void MissingDependenciesAreRejectedWithoutAddingAnyInstructions()
     {
         var process = new ProcessBase<ExecutionContextBase>();
         var input = new Step(40);
+        var intermediate = new Step(1, input);
+        var output = new Step(1, intermediate);
+        var empty = process.Instructions;
+
+        Assert.Throws<InvalidOperationException>(() => process.Add(output));
+        Assert.Same(empty, process.Instructions);
+        Assert.Empty(process.Instructions);
+
+        process.Add(input);
+        var before = process.Instructions;
+        Assert.Throws<InvalidOperationException>(() => process.Add(output));
+        Assert.Same(before, process.Instructions);
+        Assert.Same(input, Assert.Single(process.Instructions));
+
+        process.Add(intermediate);
+        Assert.Same(output, process.Add(output));
+        Assert.Equal(new InstructionBase[] { input, intermediate, output }, process.Instructions);
+        Assert.Empty(empty);
+        Assert.Same(input, Assert.Single(before));
+    }
+
+    [Fact]
+    public void MixedKnownAndMissingDependenciesFailAtomically()
+    {
+        var process = new ProcessBase<ExecutionContextBase>();
+        var known = process.Add(new Step(40));
+        var missing = new Step(1);
+        var output = new Step(0, known, missing, known);
+        var before = process.Instructions;
+
+        Assert.Throws<InvalidOperationException>(() => process.Add(output));
+
+        Assert.Same(before, process.Instructions);
+        Assert.Same(known, Assert.Single(process.Instructions));
+        process.Add(missing);
+        Assert.Same(output, process.Add(output));
+        Assert.Equal(new InstructionBase[] { known, missing, output }, process.Instructions);
+    }
+
+    [Fact]
+    public void EqualInstructionsAndDuplicateIdsDoNotSatisfyDependencyMembership()
+    {
+        var process = new ProcessBase<ExecutionContextBase>();
+        var id = Guid.NewGuid();
+        var member = process.Add(new EqualStep(40) { Id = id });
+        var missing = new EqualStep(40) { Id = id };
+        var output = new EqualStep(2, missing);
+        var before = process.Instructions;
+
+        Assert.Throws<InvalidOperationException>(() => process.Add(output));
+
+        Assert.Same(before, process.Instructions);
+        Assert.Same(member, Assert.Single(process.Instructions));
+        process.Add(missing);
+        Assert.Same(output, process.Add(output));
+        Assert.Equal(3, process.Instructions.Count);
+    }
+
+    [Fact]
+    public void ExecutionContextOrOtherProcessMembershipDoesNotSatisfyDependencyMembership()
+    {
+        var other = new ProcessBase<ExecutionContextBase>();
+        var input = other.Add(new Step(40));
+        var context = new ExecutionContextBase();
+        context.Register(input);
+        var process = new ProcessBase<ExecutionContextBase>();
+        var before = process.Instructions;
+        var output = new Step(2, input);
+
+        Assert.Throws<InvalidOperationException>(() => process.Add(output));
+
+        Assert.Same(before, process.Instructions);
+        Assert.Empty(process.Instructions);
+        Assert.Single(context.Operations);
+        process.Add(input);
+        Assert.Same(output, process.Add(output));
+    }
+
+    [Fact]
+    public void ReAddingMemberValidatesMissingTransitiveDependenciesAfterEdits()
+    {
+        var process = new ProcessBase<ExecutionContextBase>();
+        var upstream = process.Add(new MalformedInstruction());
+        var root = process.Add(new MalformedInstruction { DeclaredDependencies = [upstream] });
+        var missing = new MalformedInstruction();
+        upstream.DeclaredDependencies = [missing];
+        var before = process.Instructions;
+
+        Assert.Throws<InvalidOperationException>(() => process.Add(root));
+
+        Assert.Same(before, process.Instructions);
+        Assert.Equal(new InstructionBase[] { upstream, root }, process.Instructions);
+        process.Add(missing);
+        var after = process.Instructions;
+        Assert.Same(root, process.Add(root));
+        Assert.Same(after, process.Instructions);
+        Assert.Equal(new InstructionBase[] { upstream, root, missing }, process.Instructions);
+    }
+
+    [Fact]
+    public void ReAddingMemberRejectsCyclesAfterDependencyEdits()
+    {
+        var process = new ProcessBase<ExecutionContextBase>();
+        var upstream = process.Add(new MalformedInstruction());
+        var root = process.Add(new MalformedInstruction { DeclaredDependencies = [upstream] });
+        upstream.DeclaredDependencies = [root];
+        var before = process.Instructions;
+
+        Assert.Throws<InvalidOperationException>(() => process.Add(root));
+
+        Assert.Same(before, process.Instructions);
+    }
+
+    [Fact]
+    public async Task ConcurrentAdditionsKeepAllRootsAndOneSharedDependency()
+    {
+        var process = new ProcessBase<ExecutionContextBase>();
+        var input = process.Add(new Step(40));
         var outputs = Enumerable.Range(0, 32).Select(value => new Step(value, input)).ToArray();
 
-        await Task.WhenAll(outputs.Select(output => Task.Run(() => process.Add(output)))).WaitAsync(_timeout);
+        var added = await Task.WhenAll(outputs.Select(output => Task.Run(() => process.Add(output)))).WaitAsync(_timeout);
 
+        for (int i = 0; i < outputs.Length; i++)
+            Assert.Same(outputs[i], added[i]);
         Assert.Equal(33, process.Instructions.Count);
         Assert.Single(process.Instructions, instruction => ReferenceEquals(instruction, input));
         Assert.All(outputs, output => Assert.Contains(process.Instructions,
             instruction => ReferenceEquals(instruction, output)));
+    }
+
+    [Fact]
+    public async Task ConcurrentFailedAdditionsDoNotAddMissingDependenciesOrRoots()
+    {
+        var process = new ProcessBase<ExecutionContextBase>();
+        var member = process.Add(new Step(0));
+        var before = process.Instructions;
+        var missing = new Step(40);
+        var outputs = Enumerable.Range(0, 32).Select(value => new Step(value, missing)).ToArray();
+
+        await Task.WhenAll(outputs.Select(output => Task.Run(() =>
+            Assert.Throws<InvalidOperationException>(() => process.Add(output))))).WaitAsync(_timeout);
+
+        Assert.Same(before, process.Instructions);
+        Assert.Same(member, Assert.Single(process.Instructions));
+    }
+
+    private sealed class CompletionStep : InstructionBase<ExecutionContextBase>
+    {
+        protected override OperationInstanceBase CreateOperation(
+            ExecutionContextBase context, InstructionInputs<ExecutionContextBase> inputs) =>
+            new CompletionOperation(context);
+
+        private sealed class CompletionOperation(ExecutionContextBase context) : OperationInstanceBase(context)
+        {
+            protected override Task ExecuteCoreAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        }
     }
 
     private class Step : InstructionBase<int, ExecutionContextBase>

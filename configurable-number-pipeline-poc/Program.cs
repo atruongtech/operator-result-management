@@ -11,13 +11,11 @@ ImmutableList<InstructionFactory<NumberPipelineExecutionContext>> factories =
     FactorInstructionFactory.Create(),
     DistributeInstructionFactory.Create(),
 ];
-var inputInstruction = new DirectInputInstruction();
 var process = new ProcessBase<NumberPipelineExecutionContext>();
-process.Add(inputInstruction);
-var multiply = process.Append(inputInstruction,
-    source => new UserInputMultiplyInstruction(source));
-var factor = process.Append(multiply, source => new FactorInstruction(source));
-process.Append(factor, source => new MinMaxDifferenceInstruction(source));
+var inputInstruction = process.Add(new DirectInputInstruction());
+var multiply = process.Add(new UserInputMultiplyInstruction(inputInstruction));
+var factor = process.Add(new FactorInstruction(multiply));
+process.Add(new MinMaxDifferenceInstruction(factor));
 
 while(true)
 {    
