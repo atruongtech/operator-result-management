@@ -9,6 +9,15 @@
             "program": "${workspaceFolder}\\configurable-number-pipeline-poc\\bin\\Debug\\net10.0\\configurable-number-pipeline-poc.dll",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Drink ordering",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "Build solution",
+            "program": "${workspaceFolder}\\drink-ordering-poc\\bin\\Debug\\net10.0\\drink-ordering-poc.dll",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
         }
     ]
 }

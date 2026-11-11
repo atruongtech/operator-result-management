@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="configurable-number-pipeline-poc/configurable-number-pipeline-poc.csproj" />
+  <Project Path="drink-ordering-poc/drink-ordering-poc.csproj" />
   <Project Path="operator-result-management.Tests/operator-result-management.Tests.csproj" />
   <Project Path="operator-result-management/operator-result-management.csproj" />
 </Solution>

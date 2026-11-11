@@ -2,22 +2,49 @@
 
 A .NET 10 library for reusable dependency graphs, per-run operations, and shared asynchronous results. The library manages registration and execute-once behavior; your application supplies the work, services, and UI. Persistence, retries, rollback, and execution history are application concerns.
 
-The [configurable number pipeline proof of concept (POC)](configurable-number-pipeline-poc/Program.cs) demonstrates integration. Its console services and arithmetic instructions are sample code, not library features.
+The [configurable number pipeline proof of concept (POC)](configurable-number-pipeline-poc/Program.cs) demonstrates editable graphs. The [drink ordering POC](drink-ordering-poc/Program.cs) demonstrates stateful services and conditional subprocesses. Their console services and domain instructions are sample code, not library features.
 
 ## Getting started
 
 Install the **.NET 10 SDK**. From the repository root:
 
+## Configurable number pipeline proof of concept
 ```powershell
 dotnet build .\operator-result-management.slnx
 dotnet run --project .\configurable-number-pipeline-poc\configurable-number-pipeline-poc.csproj
 ```
+This example project demonstrates a workflow in which a process can be configured
+at runtime. Consuming applications might use the library to expose functionality in which users can define custom processes, execute them, and iterate the definition while inspecting results.
 
 The POC's initial pipeline reads an integer, multiplies it, factors the product, and calculates the difference between the largest and smallest factors. Its menu lets users execute the process or add instructions compatible with selected upstream steps. Each run uses a fresh context.
 
 The POC is interactive, not a batch CLI. Factoring requires a positive number, and the difference step requires a nonempty list. Multiplication does not check overflow; non-cancellation errors propagate out of the app. **Ctrl+C** requests cancellation during execution, but cannot interrupt a synchronous console read.
 
 In VS Code, select **Configurable number pipeline** and press `Ctrl+F5`; `Ctrl+Shift+B` builds without running.
+
+## Drink ordering proof of concept
+
+```powershell
+dotnet run --project .\drink-ordering-poc\drink-ordering-poc.csproj
+```
+This example project demonstrates using the library is to define fixed processes. The application establishes two distinct workflows with different steps and dependencies. The use of the library types can provide abstraction of dependency registration to allow consumers to focus on the step definitions.
+
+| Workflow | Sizes | Initial state and replenishment |
+|---|---|---|
+| Orange juice | Small: 1 orange; medium: 2; large: 3 | Hopper starts full with 6 oranges. Insufficient stock triggers a refill to 6 before production. Pulp setting starts enabled and persists until changed by a customer's selection. |
+| Coffee | Small: 4 oz; large: 8 oz | Carafe starts empty. Insufficient coffee triggers a cancellable, asynchronous 3-second brew that adds 12 oz, preserving leftovers. |
+
+[OrangeJuiceProcess](drink-ordering-poc/OrangeJuiceProcess.cs) composes **take size order -> check hopper -> conditionally fill hopper -> choose pulp and set machine -> produce juice -> return juice**. [CoffeeProcess](drink-ordering-poc/CoffeeProcess.cs) composes **take size order -> check carafe -> conditionally brew -> pour serving -> ask for and add cream -> ask for and add sugar -> return coffee**. Both publish immutable typed drink results that include the chosen pulp setting or cream and sugar counts.
+
+Replenishment uses the library's `ConditionalInstruction<DrinkOrderExecutionContext>` with a completion-only body instruction. Fresh child contexts share the parent's machines, console, and cancellation token. Pulp selection waits for the refill conditional, and production waits for pulp selection. Pouring waits for the brew conditional; cream waits for pouring, sugar waits for cream, and returning waits for sugar. The console displays checks, replenishment, remaining stock, the persistent pulp setting, and each drink's customizations.
+
+In VS Code, select **Drink ordering** and press `Ctrl+F5`.
+
+```powershell
+dotnet test .\drink-ordering-poc.Tests\drink-ordering-poc.Tests.csproj
+```
+
+## Referencing the library
 
 To integrate the library, add a project reference, replacing the application path:
 
